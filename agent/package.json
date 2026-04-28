@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "app-info-parser": "^1.1.6",
+    "unzipper": "^0.12.3"
+  }
+}

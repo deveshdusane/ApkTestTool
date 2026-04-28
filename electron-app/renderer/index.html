@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TestMate AI — Project QA Dashboard</title>
+    <meta name="description" content="AI-powered mobile game QA automation tool with project-based organization.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+
+<body>
+    <div class="app-layout">
+
+        <!-- ── SIDEBAR ──────────────────────────────────────── -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <span class="logo-icon">⚡</span>
+                    <span class="logo-text">TestMate <span class="logo-ai">AI</span></span>
+                </div>
+                <p class="logo-sub">Mobile QA Agent</p>
+            </div>
+
+            <div class="sidebar-section">
+                <label class="section-label">Active Project</label>
+                <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                    <select id="project-select" class="project-dropdown" style="flex: 1; margin: 0;">
+                        <option value="">— select project —</option>
+                    </select>
+                    <button id="sidebar-delete-project-btn" class="btn-xs danger hidden" title="Delete selected project"
+                        style="padding: 0 8px;">🗑</button>
+                </div>
+                <button id="create-project-btn" class="btn-sidebar" title="Create new project">
+                    + New Project
+                </button>
+            </div>
+
+            <!-- New project form (hidden) -->
+            <div id="new-project-form" class="new-project-form hidden">
+                <input id="project-name-input" type="text" placeholder="Project name…" class="text-input"
+                    maxlength="40">
+                <div class="form-row">
+                    <button id="confirm-create-btn" class="btn-sm primary">Create</button>
+                    <button id="cancel-create-btn" class="btn-sm ghost">Cancel</button>
+                </div>
+            </div>
+
+            <nav class="sidebar-nav">
+                <button class="nav-item active" data-tab="test" id="nav-test">🧪 Test Session</button>
+                <button class="nav-item" data-tab="runtime" id="nav-runtime">🧠 Runtime Intel</button>
+                <button class="nav-item" data-tab="report" id="nav-report">📊 QA Report</button>
+                <button class="nav-item" data-tab="static" id="nav-static">📁 Static Analysis</button>
+                <button class="nav-item" data-tab="prediction" id="nav-prediction">🔮 Device Prediction</button>
+                <button class="nav-item" data-tab="history" id="nav-history">📂 History</button>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div id="project-meta" class="project-meta hidden">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-end;">
+                        <div>
+                            <span class="meta-label">Project</span>
+                            <span id="active-project-name" class="meta-value">—</span>
+                        </div>
+                        <button id="delete-project-btn" class="btn-xs danger" title="Delete this project"
+                            style="margin-left: 10px; padding: 4px 6px;">🗑</button>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- ── MAIN CONTENT ────────────────────────────────── -->
+        <main class="main-content">
+
+            <!-- ── TAB: TEST SESSION ──────────────────────── -->
+            <section class="tab-panel active" id="tab-test">
+                <div id="project-empty-state" class="empty-project-state"
+                    style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; text-align: center; padding-top: 60px;">
+                    <div style="font-size: 64px; margin-bottom: 20px;">📁</div>
+                    <h2 style="font-size: 24px; margin-bottom: 8px;">No Project Selected</h2>
+                    <p style="color: #a1a1aa; margin-bottom: 24px; max-width: 300px;">Please select a project from the
+                        sidebar or create a new one to begin testing.</p>
+                    <button id="empty-state-create-btn" class="btn primary">➕ Create New Project</button>
+                </div>
+
+                <div id="test-content-wrapper" class="hidden">
+                    <div class="page-header"
+                        style="display: flex; justify-content: space-between; align-items: flex-start;">
+                        <div>
+                            <h1>Test Session</h1>
+                            <p class="page-sub">Install an APK and run an automated QA session.</p>
+                        </div>
+                        <button id="main-delete-project-btn" class="btn outline danger btn-sm"
+                            style="margin-top: 8px;">🗑 Delete Project</button>
+                    </div>
+
+                    <div id="device-status-bar" class="card device-status-card hidden"
+                        style="margin-bottom: 16px; display: flex; gap: 24px; padding: 12px 20px; background: rgba(30, 30, 45, 0.6); border: 1px solid #3f3f46; border-radius: 8px; font-size: 13px;">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="font-size: 16px;">📱</span>
+                            <span style="color: #a1a1aa;">Device:</span>
+                            <span id="status-device-name" style="color: #fff; font-weight: 500;">—</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="font-size: 16px;">🤖</span>
+                            <span style="color: #a1a1aa;">Android:</span>
+                            <span id="status-android-version" style="color: #fff; font-weight: 500;">—</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="font-size: 16px;">🔋</span>
+                            <span style="color: #a1a1aa;">Battery:</span>
+                            <span id="status-battery-level" style="color: #fff; font-weight: 500;">—</span>
+                        </div>
+                        <div style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
+                            <span style="font-size: 16px;">🔌</span>
+                            <span style="color: #a1a1aa;">Status:</span>
+                            <span id="status-connection" style="color: #2dd4bf; font-weight: 600;">Disconnected</span>
+                        </div>
+                    </div>
+
+                    <div class="card apk-card" id="drop-zone">
+                        <div class="drop-inner">
+                            <div class="drop-icon">📦</div>
+                            <p id="drop-text">Drag & Drop APK here</p>
+                            <p id="file-name" class="file-name"></p>
+                            <button id="browse-btn" class="btn outline">Browse APK</button>
+                        </div>
+                    </div>
+
+                    <div class="controls-bar" style="display: flex; align-items: center; gap: 12px;">
+                        <button id="start-btn" class="btn primary" disabled>▶ Start Test</button>
+
+                        <div id="running-controls" class="hidden"
+                            style="display: flex; align-items: center; gap: 16px;">
+                            <span id="session-timer"
+                                style="font-family: 'JetBrains Mono', monospace; color: #2dd4bf; font-weight: bold; font-size: 16px;">00:00</span>
+                            <button id="stop-btn" class="btn danger">■ Stop Test</button>
+                        </div>
+
+                        <button id="report-btn" class="btn accent hidden">📊 Generate Report</button>
+                    </div>
+
+                    <div id="live-dashboard" class="card dashboard-card hidden"
+                        style="margin-top: 16px; background-color: #18181b; border: 1px solid #3f3f46;">
+                        <div class="card-header" style="border-bottom: 1px solid #27272a; padding-bottom: 8px;">
+                            <h3
+                                style="color: #2dd4bf; margin: 0; font-size: 14px; text-transform: uppercase; letter-spacing: 1px;">
+                                🟢 Live Monitoring</h3>
+                        </div>
+                        <div style="display: flex; gap: 16px; padding: 16px 0 8px 0;">
+                            <div
+                                style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; border-right: 1px solid #3f3f46;">
+                                <div style="font-size: 40px; font-weight: bold; color: #38bdf8; text-shadow: 0 0 10px rgba(56,189,248,0.5);"
+                                    id="live-fps">--</div>
+                                <div style="font-size: 12px; color: #a1a1aa; text-transform: uppercase;">FPS Gauge</div>
+                            </div>
+                            <div style="flex: 2; height: 100px; position: relative;">
+                                <canvas id="live-memory-chart"></canvas>
+                            </div>
+                            <div
+                                style="flex: 1; display: flex; flex-direction: column; justify-content: center; padding-left: 16px; border-left: 1px solid #3f3f46;">
+                                <div style="margin-bottom: 8px;">
+                                    <div style="font-size: 10px; color: #a1a1aa; text-transform: uppercase;">Network
+                                        Status</div>
+                                    <div style="display: flex; align-items: baseline; gap: 8px;">
+                                        <div id="live-network"
+                                            style="color: #e879f9; font-weight: bold; font-size: 16px;">--</div>
+                                        <div id="live-ping" style="color: #60a5fa; font-size: 12px; font-weight: 500;">
+                                            -- ms</div>
+                                    </div>
+                                </div>
+                                <div>
+                                    <div style="font-size: 10px; color: #a1a1aa; text-transform: uppercase;">Target Device</div>
+                                    <div style="display: flex; gap: 12px; margin-top: 2px;">
+                                        <!-- Device label moved to next block -->
+                                    </div>
+                                    <div id="live-device"
+                                        style="color: #fbbf24; font-weight: 500; font-size: 11px; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                        --</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="live-issues-panel" class="card hidden"
+                        style="margin-top: 16px; border: 1px solid #ef4444; background-color: rgba(239,68,68,0.05);">
+                        <div class="card-header"
+                            style="border-bottom: 1px solid rgba(239,68,68,0.2); padding-bottom: 8px;">
+                            <h3
+                                style="color: #ef4444; margin: 0; font-size: 14px; text-transform: uppercase; letter-spacing: 1px;">
+                                🔴 Live Issues</h3>
+                        </div>
+                        <div id="live-issues-list" style="padding: 12px 16px;"></div>
+                    </div>
+
+                    <div class="card log-card">
+                        <div class="card-header">
+                            <h3>Session Log</h3>
+                            <button id="clear-logs-btn" class="btn-xs ghost">Clear</button>
+                        </div>
+                        <div id="status-logs" class="logs">
+                            <div class="log-entry system">⚡ System ready — select a project to begin.</div>
+                        </div>
+                    </div>
+
+                </div> <!-- test-content-wrapper -->
+            </section>
+
+            <!-- ── TAB: RUNTIME INTELLIGENCE ───────────────── -->
+            <section class="tab-panel" id="tab-runtime">
+                <div class="page-header">
+                    <h1>Runtime Intelligence</h1>
+                    <p class="page-sub">Live behavioral analysis from gameplay logs and system state.</p>
+                </div>
+
+                <div id="runtime-empty-state" class="empty-project-state" style="padding: 40px; text-align: center;">
+                    <div style="font-size: 48px; margin-bottom: 15px;">🧠</div>
+                    <h3>Waiting for Test Session</h3>
+                    <p style="color: #a1a1aa;">Start a test session to begin capturing runtime intelligence data.</p>
+                </div>
+
+                <div id="runtime-content" class="hidden">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px;">
+                        <div class="card"
+                            style="border-left: 4px solid #2dd4bf; padding: 20px; background: rgba(45, 212, 191, 0.05);">
+                            <div
+                                style="font-size: 11px; text-transform: uppercase; color: #a1a1aa; margin-bottom: 8px;">
+                                Dynamic Engine</div>
+                            <div id="runtime-engine-status" style="font-size: 24px; font-weight: bold; color: #fff;">
+                                Unknown</div>
+                            <div style="font-size: 12px; color: #2dd4bf; margin-top: 4px;">Log-Verified via binary
+                                signatures</div>
+                        </div>
+                        <div class="card"
+                            style="border-left: 4px solid #38bdf8; padding: 20px; background: rgba(56, 189, 248, 0.05);">
+                            <div
+                                style="font-size: 11px; text-transform: uppercase; color: #a1a1aa; margin-bottom: 8px;">
+                                Network Awareness</div>
+                            <div id="runtime-network-calls" style="font-size: 24px; font-weight: bold; color: #fff;">0
+                            </div>
+                            <div style="font-size: 12px; color: #38bdf8; margin-top: 4px;">Sensitive external calls
+                                intercepted</div>
+                        </div>
+                    </div>
+
+                    <!-- SDK Intelligence & Activation Status -->
+                    <div class="card" style="padding: 20px; margin-bottom: 24px;">
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;">
+                            <div style="font-size: 11px; text-transform: uppercase; color: #a1a1aa; letter-spacing: 0.05em; font-weight: 600;">SDK Intelligence & Activation Status</div>
+                            <div style="font-size: 10px; color: #52525b;">Real data only · Static APK + Runtime logs</div>
+                        </div>
+                        <!-- Stats strip -->
+                        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; margin-bottom: 20px; background: rgba(0,0,0,0.25); border-radius: 8px; border: 1px solid rgba(255,255,255,0.06); overflow: hidden;">
+                            <div style="text-align: center; padding: 14px 10px;">
+                                <div id="sdk-stat-detected" style="font-size: 22px; font-weight: 700; color: #38bdf8;">—</div>
+                                <div style="font-size: 10px; color: #71717a; margin-top: 3px; text-transform: uppercase; letter-spacing: 0.04em;">Detected SDKs</div>
+                            </div>
+                            <div style="text-align: center; padding: 14px 10px; border-left: 1px solid rgba(255,255,255,0.06);">
+                                <div id="sdk-stat-active" style="font-size: 22px; font-weight: 700; color: #2dd4bf;">—</div>
+                                <div style="font-size: 10px; color: #71717a; margin-top: 3px; text-transform: uppercase; letter-spacing: 0.04em;">Active in Runtime</div>
+                            </div>
+                            <div style="text-align: center; padding: 14px 10px; border-left: 1px solid rgba(255,255,255,0.06);">
+                                <div id="sdk-stat-keys" style="font-size: 22px; font-weight: 700; color: #fbbf24;">—</div>
+                                <div style="font-size: 10px; color: #71717a; margin-top: 3px; text-transform: uppercase; letter-spacing: 0.04em;">Keys Found</div>
+                            </div>
+                            <div style="text-align: center; padding: 14px 10px; border-left: 1px solid rgba(255,255,255,0.06);">
+                                <div id="sdk-stat-danger" style="font-size: 22px; font-weight: 700; color: #f87171;">—</div>
+                                <div style="font-size: 10px; color: #71717a; margin-top: 3px; text-transform: uppercase; letter-spacing: 0.04em;">Danger Keys</div>
+                            </div>
+                        </div>
+                        <!-- SDK rows - dynamically rendered -->
+                        <div id="sdk-panels-grid" style="display: flex; flex-direction: column; gap: 8px;">
+                            <div style="font-size: 12px; color: #52525b; padding: 16px; text-align: center;">Waiting for APK analysis…</div>
+                        </div>
+                        <!-- Hidden legacy placeholders -->
+                        <div id="runtime-ads-badge" style="display:none;"></div>
+                        <div id="runtime-firebase-badge" style="display:none;"></div>
+                    </div>
+
+                    <!-- Extracted Keys & Full SDK Key Reference -->
+                    <div class="card" style="padding: 20px; margin-bottom: 24px;">
+                        <!-- Header -->
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;">
+                            <div style="font-size: 11px; text-transform: uppercase; color: #a1a1aa; font-weight: 600; letter-spacing: 0.05em;">🔐 Extracted Keys &amp; Full SDK Key Reference</div>
+                        </div>
+                        <!-- Search + category filter (for extracted keys) -->
+                        <div style="display: flex; gap: 10px; margin-bottom: 14px;">
+                            <input id="sdk-key-search" type="text" placeholder="Search SDK or key name…"
+                                style="flex:1; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 8px 12px; font-size: 12px; color: #e4e4e7; outline: none; font-family: inherit;"
+                                oninput="filterExtractedKeys()" />
+                            <select id="sdk-key-category" onchange="filterExtractedKeys()"
+                                style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 8px 12px; font-size: 12px; color: #e4e4e7; outline: none; font-family: inherit; cursor: pointer; min-width: 130px;">
+                                <option value="">All Categories</option>
+                                <option value="ADS">ADS</option>
+                                <option value="ANALYTICS">ANALYTICS</option>
+                                <option value="ATTRIBUTION">ATTRIBUTION</option>
+                                <option value="BACKEND">BACKEND</option>
+                                <option value="IAP">IAP</option>
+                                <option value="MONITORING">MONITORING</option>
+                            </select>
+                        </div>
+                        <!-- Extracted key rows (dynamically rendered) -->
+                        <div id="sdk-extracted-keys-section" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 24px;">
+                            <span style="font-size: 11px; color: #52525b;">Waiting for APK analysis…</span>
+                        </div>
+                        <!-- Full Reference Table -->
+                        <div style="border-top: 1px solid rgba(255,255,255,0.07); padding-top: 18px;">
+                            <!-- Header row -->
+                            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+                                <div style="display: flex; align-items: center; gap: 10px;">
+                                    <div style="font-size: 13px; font-weight: 700; color: #e4e4e7; letter-spacing: 0.01em;">SDK Key Lookup</div>
+                                    <span style="font-size: 10px; background: rgba(139,92,246,0.15); color: #a78bfa; border: 1px solid rgba(139,92,246,0.3); border-radius: 10px; padding: 1px 8px; font-weight: 600;"><span id="sdk-ref-count">0</span> entries</span>
+                                </div>
+                                <div style="font-size: 10px; color: #52525b; font-style: italic;">Search string key names when auto-scan finds nothing</div>
+                            </div>
+                            <!-- Search bar -->
+                            <div style="position: relative; margin-bottom: 14px;">
+                                <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:12px;color:#52525b;">🔍</span>
+                                <input id="sdk-ref-filter" type="text" placeholder="Search by SDK, key label, or string name…"
+                                    style="width: 100%; box-sizing: border-box; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 9px 12px 9px 30px; font-size: 12px; color: #d4d4d8; outline: none; font-family: inherit;"
+                                    oninput="filterReferenceTable()" />
+                            </div>
+                            <!-- Column labels (subtle, matches inner grid) -->
+                            <div style="display: grid; grid-template-columns: 150px 120px 1fr 175px; gap: 0; padding: 4px 16px 4px 20px; margin-bottom: 2px;">
+                                <div style="font-size: 9px; text-transform: uppercase; color: #3f3f46; font-weight: 700; letter-spacing: 0.08em;">SDK</div>
+                                <div style="font-size: 9px; text-transform: uppercase; color: #3f3f46; font-weight: 700; letter-spacing: 0.08em;">Key Type</div>
+                                <div style="font-size: 9px; text-transform: uppercase; color: #3f3f46; font-weight: 700; letter-spacing: 0.08em;">String Names to Search</div>
+                                <div style="font-size: 9px; text-transform: uppercase; color: #3f3f46; font-weight: 700; letter-spacing: 0.08em;">Expected Format</div>
+                            </div>
+                            <!-- Grouped rows (dynamically rendered) -->
+                            <div id="sdk-ref-table-body" style="border-radius: 8px; max-height: 440px; overflow-y: auto; overflow-x: hidden; border: 1px solid rgba(255,255,255,0.06);">
+                                <div style="padding: 20px; text-align: center; font-size: 12px; color: #52525b;">Loading reference…</div>
+                            </div>
+                        </div>
+                        <!-- Hidden legacy placeholders -->
+                        <div id="runtime-sdk-insights" style="display:none;"></div>
+                        <div id="runtime-sdk-recommendations" style="display:none;"></div>
+                    </div>
+
+                    <!-- Runtime Event Timeline (Live) -->
+                    <div class="card" style="padding: 20px; margin-bottom: 24px;">
+                        <!-- Header -->
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;">
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <div style="font-size: 11px; text-transform: uppercase; color: #a1a1aa; font-weight: 600; letter-spacing: 0.05em;">Runtime Event Timeline</div>
+                                <span id="timeline-live-badge" style="display: none; font-size: 9px; font-weight: 700; color: #2dd4bf; background: rgba(45,212,191,0.1); border: 1px solid rgba(45,212,191,0.3); border-radius: 8px; padding: 2px 8px; text-transform: uppercase; letter-spacing: 0.07em;">● LIVE</span>
+                            </div>
+                            <div style="font-size: 10px; color: #3f3f46; font-style: italic;">Parsed from ADB logcat — no AI inference</div>
+                        </div>
+                        <!-- Stats strip -->
+                        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px;">
+                            <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); border-radius: 6px; padding: 8px 10px; text-align: center;">
+                                <div id="tl-stat-duration" style="font-size: 15px; font-weight: 700; color: #e4e4e7; font-family: 'JetBrains Mono', monospace;">0s</div>
+                                <div style="font-size: 9px; color: #52525b; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 3px;">Duration</div>
+                            </div>
+                            <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); border-radius: 6px; padding: 8px 10px; text-align: center;">
+                                <div id="tl-stat-total" style="font-size: 15px; font-weight: 700; color: #e4e4e7; font-family: 'JetBrains Mono', monospace;">0</div>
+                                <div style="font-size: 9px; color: #52525b; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 3px;">Total Events</div>
+                            </div>
+                            <div style="background: rgba(45,212,191,0.05); border: 1px solid rgba(45,212,191,0.15); border-radius: 6px; padding: 8px 10px; text-align: center;">
+                                <div id="tl-stat-ads" style="font-size: 15px; font-weight: 700; color: #2dd4bf; font-family: 'JetBrains Mono', monospace;">0</div>
+                                <div style="font-size: 9px; color: #52525b; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 3px;">Ads Events</div>
+                            </div>
+                            <div style="background: rgba(56,189,248,0.05); border: 1px solid rgba(56,189,248,0.15); border-radius: 6px; padding: 8px 10px; text-align: center;">
+                                <div id="tl-stat-firebase" style="font-size: 15px; font-weight: 700; color: #38bdf8; font-family: 'JetBrains Mono', monospace;">0</div>
+                                <div style="font-size: 9px; color: #52525b; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 3px;">Firebase Events</div>
+                            </div>
+                        </div>
+                        <!-- Time filter pills -->
+                        <div style="display: flex; gap: 6px; margin-bottom: 12px;">
+                            <button id="tl-filter-1min" onclick="setTimelineFilter('1min')" style="font-size: 11px; padding: 4px 14px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.04); color: #a1a1aa; cursor: pointer; font-family: inherit; outline: none;">Last 1 min</button>
+                            <button id="tl-filter-5min" onclick="setTimelineFilter('5min')" style="font-size: 11px; padding: 4px 14px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.04); color: #a1a1aa; cursor: pointer; font-family: inherit; outline: none;">Last 5 min</button>
+                            <button id="tl-filter-full" onclick="setTimelineFilter('full')" style="font-size: 11px; padding: 4px 14px; border-radius: 20px; border: 1px solid rgba(139,92,246,0.4); background: rgba(139,92,246,0.15); color: #a78bfa; cursor: pointer; font-family: inherit; outline: none;">Full Session</button>
+                        </div>
+                        <!-- Scrollable event list -->
+                        <div id="runtime-event-timeline" style="display: flex; flex-direction: column; gap: 2px; max-height: 300px; overflow-y: auto; background: rgba(0,0,0,0.25); border-radius: 6px; border: 1px solid rgba(255,255,255,0.06); padding: 10px 12px;">
+                            <span style="color: #3f3f46; font-size: 11px; font-family: 'JetBrains Mono', monospace;">Waiting for runtime activity...</span>
+                        </div>
+                    </div>
+
+                    <!-- QA Checklist Validation Engine -->
+                    <div class="card" style="padding: 20px; margin-bottom: 24px; background: rgba(251, 191, 36, 0.05); border: 1px solid rgba(251, 191, 36, 0.2);">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                            <div style="font-size: 11px; text-transform: uppercase; color: #fbbf24; font-weight: bold;">
+                                📋 QA Verification Checklist
+                            </div>
+                            <div style="font-size: 10px; color: #a1a1aa;">
+                                Validated purely from real-time events, NO AI assumptions
+                            </div>
+                        </div>
+                        
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                            <div>
+                                <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                    <span style="font-size: 13px; color: #e4e4e7;">Game Start</span>
+                                    <span id="qa-game-start" style="font-size: 13px;">❌</span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                    <span style="font-size: 13px; color: #e4e4e7;">Splash Screen</span>
+                                    <span id="qa-splash-screen" style="font-size: 13px;">❌</span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                    <span style="font-size: 13px; color: #e4e4e7;">64-Bit Play Store Ready</span>
+                                    <span id="qa-build-64bit" style="font-size: 13px;">❌</span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; padding: 6px 0;">
+                                    <span style="font-size: 13px; color: #e4e4e7;">Release Build Integrity</span>
+                                    <span id="qa-build-release" style="font-size: 13px;">❌</span>
+                                </div>
+                            </div>
+                            <div>
+                                <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                    <span style="font-size: 13px; color: #e4e4e7;">Firebase SDK Init</span>
+                                    <span id="qa-firebase-init" style="font-size: 13px;">❌</span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                    <span style="font-size: 13px; color: #e4e4e7;">Ads SDK Installed</span>
+                                    <span id="qa-ads-sdk" style="font-size: 13px;">❌</span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                    <span style="font-size: 13px; color: #e4e4e7;">AppsFlyer Init</span>
+                                    <span id="qa-appsflyer" style="font-size: 13px;">❌</span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; padding: 6px 0;">
+                                    <span style="font-size: 13px; color: #e4e4e7;">Permissions Security</span>
+                                    <span id="qa-safe-permissions" style="font-size: 13px;">❌</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card"
+                        style="padding: 20px; margin-bottom: 24px; background: rgba(167, 139, 250, 0.05); border: 1px solid rgba(167, 139, 250, 0.2);">
+                        <div style="font-size: 11px; text-transform: uppercase; color: #a1a1aa; margin-bottom: 12px;">
+                            Live Audit Analytics</div>
+                        <div style="display: grid; grid-template-columns: 1fr; gap: 15px;">
+                            <div>
+                                <div style="font-size: 10px; color: #a1a1aa;">Peak Memory</div>
+                                <div id="runtime-peak-mem" style="font-size: 18px; font-weight: bold; color: #a78bfa;">
+                                    -- MB</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card"
+                        style="padding: 20px; margin-bottom: 24px; border-left: 4px solid #e879f9; background: rgba(232, 121, 249, 0.05);">
+                        <div style="font-size: 11px; text-transform: uppercase; color: #a1a1aa; margin-bottom: 12px;">🌐
+                            Network Intelligence</div>
+                        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px;">
+                            <div>
+                                <div style="font-size: 10px; color: #a1a1aa;">Avg Ping</div>
+                                <div id="runtime-avg-ping" style="font-size: 18px; font-weight: bold; color: #60a5fa;">
+                                    -- ms</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 10px; color: #a1a1aa;">Data Used</div>
+                                <div id="runtime-data-used" style="font-size: 18px; font-weight: bold; color: #e879f9;">
+                                    -- MB</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 10px; color: #a1a1aa;">Disconnects</div>
+                                <div id="runtime-disconnects"
+                                    style="font-size: 18px; font-weight: bold; color: #fb7185;">--</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 10px; color: #a1a1aa;">Status</div>
+                                <div id="runtime-network-status"
+                                    style="font-size: 18px; font-weight: bold; color: #2dd4bf;">STABLE</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card" style="padding: 20px;">
+                        <div style="font-size: 11px; text-transform: uppercase; color: #a1a1aa; margin-bottom: 12px;">
+                            Granted Runtime Permissions</div>
+                        <div id="runtime-permissions-list" style="display: flex; flex-wrap: wrap; gap: 8px;">
+                            <span style="color: #71717a; font-size: 13px;">Waiting for permission audit...</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ── TAB: QA REPORT ─────────────────────────── -->
+            <section class="tab-panel" id="tab-report">
+                <div class="page-header">
+                    <h1>QA Evaluation Report</h1>
+                    <p class="page-sub">Comprehensive quality audit for the latest test session.</p>
+                </div>
+
+                <div id="report-empty-state" class="empty-project-state" style="padding: 40px; text-align: center;">
+                    <div style="font-size: 48px; margin-bottom: 15px;">📊</div>
+                    <h3>No Report Available</h3>
+                    <p style="color: #a1a1aa;">Complete a test session and click 'Generate Report' to view results here.
+                    </p>
+                </div>
+
+                <div id="report-container" class="card report-panel hidden"></div>
+            </section>
+
+            <!-- ── TAB: STATIC ANALYSIS ────────────────────── -->
+            <section class="tab-panel" id="tab-static">
+                <div class="page-header">
+                    <h1>Static Analysis</h1>
+                    <p class="page-sub">Decompiled APK insights and manifest intelligence.</p>
+                </div>
+
+                <div id="static-empty-state" class="empty-project-state" style="padding: 40px; text-align: center;">
+                    <div style="font-size: 48px; margin-bottom: 15px;">📊</div>
+                    <h3>No APK Analyzed</h3>
+                    <p style="color: #a1a1aa;">Upload an APK in the Test Session tab to view static analysis results.
+                    </p>
+                </div>
+
+                <div id="static-content" class="hidden">
+                    <div class="card"
+                        style="margin-bottom: 24px; background: rgba(139, 108, 247, 0.05); border: 1px solid rgba(139, 108, 247, 0.2); padding: 20px;">
+                        <div style="font-size: 12px; text-transform: uppercase; color: #a1a1aa; margin-bottom: 15px;">
+                            Application Metadata</div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                            <div>
+                                <div style="font-size: 11px; color: #a1a1aa;">Package Identity</div>
+                                <div id="apk-info-pkg"
+                                    style="font-size: 14px; color: #fff; font-weight: bold; margin-top: 4px;">—</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 11px; color: #a1a1aa;">Version Label</div>
+                                <div id="apk-info-ver"
+                                    style="font-size: 14px; color: #fff; font-weight: bold; margin-top: 4px;">—</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 11px; color: #a1a1aa;">Minimum SDK</div>
+                                <div id="apk-info-min"
+                                    style="font-size: 14px; color: #fff; font-weight: bold; margin-top: 4px;">—</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 11px; color: #a1a1aa;">Target SDK</div>
+                                <div id="apk-info-target"
+                                    style="font-size: 14px; color: #fff; font-weight: bold; margin-top: 4px;">—</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- SECURITY AUDIT SECTION -->
+                    <div class="card"
+                        style="margin-bottom: 24px; background: rgba(239, 68, 68, 0.05); border: 1px solid rgba(239, 68, 68, 0.2); padding: 20px;">
+                        <div
+                            style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px;">
+                            <div>
+                                <div
+                                    style="font-size: 12px; text-transform: uppercase; color: #a1a1aa; margin-bottom: 4px;">
+                                    Security & Privacy Audit</div>
+                                <p style="font-size: 11px; color: #71717a; margin: 0;">Comprehensive manifest analysis
+                                    and risk assessment.</p>
+                            </div>
+                            <div id="security-risk-level" class="metric"
+                                style="background: rgba(255,255,255,0.05); color: #fff; font-weight: bold; border: 1px solid rgba(255,255,255,0.1);">
+                                Risk: LOW</div>
+                        </div>
+
+                        <div style="display: grid; grid-template-columns: 1fr; gap: 20px;">
+                            <!-- Top Row: Critical Findings -->
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 20px;">
+                                <div>
+                                    <div
+                                        style="font-size: 11px; text-transform: uppercase; color: #fca5a5; margin-bottom: 10px; display: flex; align-items: center; gap: 6px;">
+                                        <span
+                                            style="width: 8px; height: 8px; background: #fca5a5; border-radius: 50%;"></span>
+                                        Dangerous Permissions
+                                    </div>
+                                    <div id="dangerous-permissions-list"
+                                        style="display: flex; flex-wrap: wrap; gap: 6px;">
+                                        <span style="font-size: 11px; color: #71717a;">None detected</span>
+                                    </div>
+                                </div>
+                                <div>
+                                    <div
+                                        style="font-size: 11px; text-transform: uppercase; color: #c4b5fd; margin-bottom: 10px; display: flex; align-items: center; gap: 6px;">
+                                        <span
+                                            style="width: 8px; height: 8px; background: #c4b5fd; border-radius: 50%;"></span>
+                                        Privacy Signals
+                                    </div>
+                                    <div id="privacy-permissions-list"
+                                        style="display: flex; flex-wrap: wrap; gap: 6px;">
+                                        <span style="font-size: 11px; color: #71717a;">None detected</span>
+                                    </div>
+                                </div>
+                                <div>
+                                    <div
+                                        style="font-size: 11px; text-transform: uppercase; color: #38bdf8; margin-bottom: 10px; display: flex; align-items: center; gap: 6px;">
+                                        <span
+                                            style="width: 8px; height: 8px; background: #38bdf8; border-radius: 50%;"></span>
+                                        Exported Components
+                                    </div>
+                                    <div id="exported-components-list"
+                                        style="display: flex; flex-wrap: wrap; gap: 6px;">
+                                        <span style="font-size: 11px; color: #71717a;">None detected</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Bottom Row: General Capabilities -->
+                            <div style="padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.05);">
+                                <div
+                                    style="font-size: 11px; text-transform: uppercase; color: #a1a1aa; margin-bottom: 10px;">
+                                    General Manifest Permissions</div>
+                                <div id="all-permissions-list" style="display: flex; flex-wrap: wrap; gap: 6px;">
+                                    <span style="font-size: 11px; color: #71717a;">No permissions detected</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div
+                            style="margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.05); display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px;">
+                            <div>
+                                <div style="font-size: 11px; color: #a1a1aa;">Manifest Debug Flag</div>
+                                <div id="security-debug-status"
+                                    style="font-size: 11px; font-weight: 600; color: #2dd4bf; margin-top: 4px;">
+                                    DISABLED</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 11px; color: #a1a1aa;">Backup Allowed</div>
+                                <div id="security-backup-status"
+                                    style="font-size: 11px; font-weight: 600; color: #2dd4bf; margin-top: 4px;">
+                                    DISABLED</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 11px; color: #a1a1aa;">Cleartext Traffic</div>
+                                <div id="security-cleartext-status"
+                                    style="font-size: 11px; font-weight: 600; color: #2dd4bf; margin-top: 4px;">
+                                    BLOCKED / DEFAULT</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ── TAB: DEVICE PREDICTION ──────────────────── -->
+            <section class="tab-panel" id="tab-prediction">
+                <div class="page-header">
+                    <h1>Device Performance Prediction</h1>
+                    <p class="page-sub">Real-time deterministic FPS scaling across hardware targets.</p>
+                </div>
+
+                <div id="prediction-empty-state" class="empty-project-state" style="padding: 40px; text-align: center;">
+                    <div style="font-size: 48px; margin-bottom: 15px;">🔮</div>
+                    <h3>Waiting for Telemetry</h3>
+                    <p style="color: #a1a1aa;">Start a test session to view live cross-device performance predictions.</p>
+                </div>
+
+                <div id="prediction-content" class="hidden">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                        <div style="display: flex; gap: 15px;">
+                            <select id="pred-filter-tier" class="btn-xs" style="background: #1e1e2d; border: 1px solid #3f3f46; color: #fff; border-radius: 6px; padding: 4px 8px;">
+                                <option value="all">All Tiers</option>
+                                <option value="flagship">Flagship (T1)</option>
+                                <option value="mid">Mid-range (T2)</option>
+                                <option value="budget">Budget (T3)</option>
+                            </select>
+                            <select id="pred-filter-region" class="btn-xs" style="background: #1e1e2d; border: 1px solid #3f3f46; color: #fff; border-radius: 6px; padding: 4px 8px;">
+                                <option value="all">All Regions</option>
+                                <option value="global">Global</option>
+                                <option value="India">India / Asia</option>
+                            </select>
+                        </div>
+                        <div id="pred-status-indicator" style="font-size: 11px; color: #2dd4bf; display: flex; align-items: center; gap: 6px;">
+                            <span class="status-dot"></span> Real-time Scaling Active
+                        </div>
+                    </div>
+                    <div class="card" style="margin-bottom: 24px; padding: 20px; border-left: 4px solid #38bdf8;">
+                        <div style="font-size: 11px; text-transform: uppercase; color: #a1a1aa; margin-bottom: 15px;">Current Device Performance</div>
+                        <div style="display: flex; gap: 40px; align-items: baseline;">
+                            <div>
+                                <div style="font-size: 11px; color: #71717a;">Device Name</div>
+                                <div id="pred-current-device" style="font-size: 18px; font-weight: bold; color: #fff;">—</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 11px; color: #71717a;">Measured FPS</div>
+                                <div id="pred-current-fps" style="font-size: 24px; font-weight: bold; color: #38bdf8; text-shadow: 0 0 10px rgba(56,189,248,0.3);">--</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 11px; color: #71717a;">Memory</div>
+                                <div id="pred-current-mem" style="font-size: 18px; font-weight: bold; color: #a78bfa;">-- MB</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card" style="padding: 20px; background: rgba(30, 30, 45, 0.4);">
+                        <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 15px;">
+                            <div style="font-size: 11px; text-transform: uppercase; color: #a1a1aa;">Predicted Performance Table</div>
+                            <div id="pred-filter-notice" style="font-size: 10px; color: #fbbf24; font-style: italic;" class="hidden">Showing best available devices (expanded results)</div>
+                        </div>
+                        <table class="prediction-table">
+                            <thead>
+                                <tr>
+                                    <th style="text-align: left; padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.1); color: #a1a1aa;">Target Device</th>
+                                    <th style="text-align: left; padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.1); color: #a1a1aa;">Specs (OS/CPU/RAM)</th>
+                                    <th style="text-align: left; padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.1); color: #a1a1aa;">Predicted FPS</th>
+                                    <th style="text-align: left; padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.1); color: #a1a1aa;">Frame Time</th>
+                                    <th style="text-align: left; padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.1); color: #a1a1aa;">Verdict</th>
+                                </tr>
+                            </thead>
+                            <tbody id="prediction-table-body">
+                                <!-- Populated dynamically -->
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1.5fr 1fr; gap: 20px; margin-top: 24px;">
+                        <div class="card" style="padding: 20px; background: rgba(45, 212, 191, 0.05); border: 1px solid rgba(45, 212, 191, 0.2);">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                                <div style="font-size: 11px; text-transform: uppercase; color: #2dd4bf; font-weight: bold;">🔮 Prediction Insights & Bottlenecks</div>
+                                <div id="pred-confidence-badge" class="metric" style="font-size: 10px; background: rgba(56, 189, 248, 0.1); color: #38bdf8;">Confidence: 0%</div>
+                            </div>
+                            <div id="pred-insights-list" style="display: flex; flex-direction: column; gap: 10px;">
+                                <div style="color: #71717a; font-size: 13px;">Waiting for stable session data...</div>
+                            </div>
+                        </div>
+
+                        <div class="card" style="padding: 20px; background: rgba(167, 139, 250, 0.05); border: 1px solid rgba(167, 139, 250, 0.2);">
+                            <div style="font-size: 11px; text-transform: uppercase; color: #a78bfa; font-weight: bold; margin-bottom: 15px;">Optimization Recommendations</div>
+                            <div id="pred-recommendations-list" style="display: flex; flex-direction: column; gap: 10px;">
+                                <div style="color: #71717a; font-size: 13px;">No bottlenecks detected yet.</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ── TAB: HISTORY ───────────────────────────── -->
+            <section class="tab-panel" id="tab-history">
+                <div class="page-header">
+                    <h1>Session History</h1>
+                    <p class="page-sub">Browse past QA sessions for the active project.</p>
+                </div>
+
+                <div class="history-layout">
+                    <div class="card history-sidebar">
+                        <div id="history-list" class="history-list">
+                            <p class="empty-state">Select a project to view history.</p>
+                        </div>
+                    </div>
+                    <div class="card history-detail" id="history-detail">
+                        <p class="empty-state">Click a session to view its report.</p>
+                    </div>
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+    <script src="devicePrediction.js"></script>
+    <script src="app.js"></script>
+</body>
+
+</html>

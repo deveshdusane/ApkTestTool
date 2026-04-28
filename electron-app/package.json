@@ -1,0 +1,32 @@
+{
+  "name": "testmate-ai-desktop",
+  "version": "1.0.0",
+  "main": "main.js",
+  "scripts": {
+    "start": "node start-electron.js",
+    "build": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^30.5.1",
+    "electron-builder": "^24.13.3"
+  },
+  "dependencies": {
+    "app-info-parser": "^1.1.6",
+    "electron-is-dev": "^3.0.1"
+  },
+  "build": {
+    "extraResources": [
+      {
+        "from": "../tools/",
+        "to": "tools/",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "asar": true,
+    "directories": {
+      "output": "dist"
+    }
+  }
+}
