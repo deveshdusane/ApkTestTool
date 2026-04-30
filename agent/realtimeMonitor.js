@@ -7,6 +7,7 @@ const fs = require('fs');
 const networkAnalyzer = require('./metrics/networkAnalyzer');
 const memoryAnalyzer = require('./advanced/memoryAnalyzer'); // Keeping this in advanced for now
 const runtimeIntelligence = require('./advanced/runtimeIntelligence');
+const proxyServer = require('./proxy/proxyServer');
 
 let logcatInterval = null;
 let monitorInterval = null;
@@ -107,13 +108,23 @@ const start = async (packageName, onData, logPath, deviceId = null) => {
 
         console.log("🚀 Starting Session Telemetry on Device:", deviceId);
 
-        // Force enable debug logging on device for Firebase/Ads tracking to capture live events
+        // Force verbose logging for all tracked SDKs
         try {
+            // Firebase
             await adbHelper.runADB(['-s', deviceId, 'shell', 'setprop', 'debug.firebase.analytics.app', packageName]);
             await adbHelper.runADB(['-s', deviceId, 'shell', 'setprop', 'log.tag.FA', 'VERBOSE']);
             await adbHelper.runADB(['-s', deviceId, 'shell', 'setprop', 'log.tag.FA-SVC', 'VERBOSE']);
+            // Ads
             await adbHelper.runADB(['-s', deviceId, 'shell', 'setprop', 'log.tag.AdMob', 'VERBOSE']);
-            await adbHelper.runADB(['-s', deviceId, 'shell', 'setprop', 'log.tag.Ads', 'VERBOSE']);
+            // GameAnalytics
+            await adbHelper.runADB(['-s', deviceId, 'shell', 'setprop', 'log.tag.GameAnalytics', 'VERBOSE']);
+            // Facebook SDK
+            await adbHelper.runADB(['-s', deviceId, 'shell', 'setprop', 'log.tag.FacebookSDK', 'VERBOSE']);
+            await adbHelper.runADB(['-s', deviceId, 'shell', 'setprop', 'log.tag.FBTRACE', 'VERBOSE']);
+            // AppsFlyer
+            await adbHelper.runADB(['-s', deviceId, 'shell', 'setprop', 'log.tag.AppsFlyerLib', 'VERBOSE']);
+            // Adjust
+            await adbHelper.runADB(['-s', deviceId, 'shell', 'setprop', 'log.tag.Adjust', 'VERBOSE']);
         } catch (e) {
             console.warn("Failed to enable debug properties on device:", e.message);
         }
@@ -127,6 +138,11 @@ const start = async (packageName, onData, logPath, deviceId = null) => {
                 runtimeIntelligence.runBinaryScan(packageName, deviceId);
             }
         } catch (e) { }
+
+        // Start MITM proxy (Phase 3) — non-blocking, graceful if openssl unavailable
+        proxyServer.start(deviceId, (ev) => {
+            try { runtimeIntelligence.addProxyEvent(ev); } catch {}
+        }).catch(() => {});
 
         // Note: networkAnalyzer ping/usage tracking is started by main.js — do NOT start here to avoid triple polling
 
@@ -165,7 +181,7 @@ const fetchAndSend = async (deviceId, pkg, onData) => {
         try {
             if (runtimeIntelligence) {
                 await runtimeIntelligence.updateAppPid(deviceId, pkg);
-                await runtimeIntelligence.updateNetworkAwareness(deviceId);
+                await runtimeIntelligence.updateNetworkAwareness(deviceId, pkg);
                 await runtimeIntelligence.updateAdsActivation(deviceId);
                 await runtimeIntelligence.updateNetworkDetection(deviceId, pkg);
             }
@@ -210,13 +226,16 @@ const fetchAndSend = async (deviceId, pkg, onData) => {
     }
 };
 
-const stop = () => {
+const stop = (deviceId = null) => {
     if (monitorInterval) clearInterval(monitorInterval);
     if (permissionInterval) clearInterval(permissionInterval);
     if (networkIntelInterval) clearInterval(networkIntelInterval);
     monitorInterval = null;
     permissionInterval = null;
     networkIntelInterval = null;
+
+    // Stop MITM proxy and clean up device proxy settings
+    proxyServer.stop(deviceId).catch(() => {});
 };
 
 const getAdvancedAudit = () => {
@@ -224,11 +243,18 @@ const getAdvancedAudit = () => {
         return {
             network: networkAnalyzer ? networkAnalyzer.generateNetworkReport() : { status: "OFF", avgPing: 0 },
             memory: memoryAnalyzer ? memoryAnalyzer.getResult() : { peakMemory: 0, idleMemory: 0, issues: [] },
-            runtime: runtimeIntelligence ? runtimeIntelligence.getResult() : {}
+            runtime: runtimeIntelligence ? runtimeIntelligence.getResult() : {},
+            proxy: {
+                active: proxyServer.isActive(),
+                port: proxyServer.getPort(),
+                intercepted: proxyServer.getIntercepted()
+            }
         };
     } catch (e) {
-        return { network: { history: [] }, memory: { issues: [] }, runtime: {} };
+        return { network: { history: [] }, memory: { issues: [] }, runtime: {}, proxy: { active: false } };
     }
 };
 
-module.exports = { start, stop, getAdvancedAudit };
+const getLastFPS = () => telemetry.fps.length ? telemetry.fps[telemetry.fps.length - 1] : null;
+
+module.exports = { start, stop, getAdvancedAudit, getLastFPS };

@@ -2,6 +2,7 @@ const adbHelper = require('../adb/adbHelper');
 const config = require('../config/config');
 const sdkIntelligence = require('./sdkIntelligence');
 const networkDomainMonitor = require('../metrics/networkDomainMonitor');
+const { EventEngine } = require('./eventEngine');
 
 /**
  * Runtime Intelligence Layer
@@ -10,6 +11,7 @@ const networkDomainMonitor = require('../metrics/networkDomainMonitor');
 class RuntimeIntelligence {
     constructor() {
         this.staticSdkIntelligence = sdkIntelligence.createEmptyIntelligence();
+        this._eventEngine = new EventEngine();
         this.reset();
         this.lastBytes = 0;
     }
@@ -69,7 +71,8 @@ class RuntimeIntelligence {
         this.sessionStartTime = Date.now();
         this._lastEventTimes = new Map([['app_started', 0]]);
         this._lastNetworkScan = 0;
-        try { networkDomainMonitor.reset(); } catch (e) {}
+        if (this._eventEngine) this._eventEngine.reset();
+        try { networkDomainMonitor.reset(); } catch (e) { }
     }
 
     setStaticSDKs(sdks) {
@@ -110,7 +113,7 @@ class RuntimeIntelligence {
             const pid = pidMatch ? pidMatch[1] : null;
 
             // Log belongs to app if: no package specified, line includes package name, OR the log's PID matches the app's PID
-            const belongsToApp = packageName ? ( line.includes(packageName) || (pid && this.activePids && this.activePids.has(pid)) ) : true;
+            const belongsToApp = packageName ? (line.includes(packageName) || (pid && this.activePids && this.activePids.has(pid))) : true;
             const lowLine = line.toLowerCase();
             const eventTime = parseFloat(((Date.now() - this.sessionStartTime) / 1000).toFixed(1));
 
@@ -119,10 +122,11 @@ class RuntimeIntelligence {
                 this.data.engine = "Unity";
             }
 
-            // 2. Ads Intelligence — no belongsToApp requirement: AdMob/Unity serve ads via GMS
-            //    (separate process, different PID, no package name in log line)
-            const adSignals = ['AdRequest', 'AdLoaded', 'AdImpression', 'onAdLoaded', 'onAdShown', 'Ads', 'AdMob', 'UnityAds', 'AudienceNetwork', 'MAX Ad', 'AppLovin', 'IronSource'];
-            if (adSignals.some(sig => line.includes(sig))) {
+            // 2. Ads Intelligence — only fire if the line belongs to the app OR the APK scan
+            //    already confirmed an ad SDK is present (guarding against GMS logs for other apps)
+            const adSignals = ['AdRequest', 'AdLoaded', 'AdImpression', 'onAdLoaded', 'onAdShown', 'AdMob', 'UnityAds', 'AudienceNetwork', 'MAX Ad', 'AppLovin', 'IronSource'];
+            const isGmsAdLine = line.includes('com.google.android.gms.ads') || line.includes('com.google.android.gms/ads');
+            if (adSignals.some(sig => line.includes(sig)) && (belongsToApp || (isGmsAdLine && this.data.staticAds))) {
                 this.data.ads.status = 'Detected';
                 this.data.ads.usage = 'Active';
                 this.data.ads.count++;
@@ -183,10 +187,13 @@ class RuntimeIntelligence {
             if (this.data.sdkIntelligence) {
                 const sdkMatches = sdkIntelligence.matchRuntimeLine(line);
                 for (const sdkId of sdkMatches) {
-                    // Ad SDKs bypass belongsToApp — GMS serves ads from its own process
+                    // Allow GMS ad lines only when the APK scan already confirmed the ad SDK
+                    // is in this app — prevents counting another app's GMS ad traffic as ours
                     const sdkDef = sdkIntelligence.SDK_DEFINITIONS.find(d => d.id === sdkId);
                     const isAdSdk = sdkDef?.category === 'ADS';
-                    if (belongsToApp || isAdSdk) {
+                    const gmsAdBypass = isAdSdk && this.data.staticAds &&
+                        (line.includes('com.google.android.gms.ads') || line.includes('com.google.android.gms/ads'));
+                    if (belongsToApp || gmsAdBypass) {
                         sdkIntelligence.markRuntime(this.data.sdkIntelligence, sdkId, {
                             time: eventTime,
                             source: 'logcat',
@@ -195,12 +202,18 @@ class RuntimeIntelligence {
                     }
                 }
 
-                const adUnitMatch = line.match(/ca-app-pub-\d{16}[~/]\d{10}/);
-                if (adUnitMatch) {
-                    const admob = this.data.sdkIntelligence.sdks.admob;
-                    if (admob && !admob.runtime.adUnitIds.includes(adUnitMatch[0])) {
-                        admob.runtime.adUnitIds.push(adUnitMatch[0]);
+                // Only extract keys from lines confirmed to belong to this app
+                if (belongsToApp) {
+                    const adUnitMatch = line.match(/ca-app-pub-\d{16}[~/]\d{10}/);
+                    if (adUnitMatch) {
+                        const admob = this.data.sdkIntelligence.sdks.admob;
+                        if (admob && !admob.runtime.adUnitIds.includes(adUnitMatch[0])) {
+                            admob.runtime.adUnitIds.push(adUnitMatch[0]);
+                        }
                     }
+
+                    // Logcat key capture: SDKs often print their App ID / API key during initialization
+                    sdkIntelligence.scanTextForKeys(this.data.sdkIntelligence, line, 'logcat');
                 }
 
                 const adTypeMap = [
@@ -219,28 +232,28 @@ class RuntimeIntelligence {
             // 5. QA Checklist Validation Engine & Event Extraction
             if (belongsToApp) {
                 // Game Start Detection
-                if (!this.data.checklist.game_start && 
-                   (line.includes('GameStart') || lowLine.includes('game_start') || lowLine.includes('session_start') || 
-                    line.includes('Application started') || line.includes('UnityMain') || line.includes('Initialized engine') || 
-                    lowLine.includes('level_start') || line.includes('start_session'))) {
+                if (!this.data.checklist.game_start &&
+                    (line.includes('GameStart') || lowLine.includes('game_start') || lowLine.includes('session_start') ||
+                        line.includes('Application started') || line.includes('UnityMain') || line.includes('Initialized engine') ||
+                        lowLine.includes('level_start') || line.includes('start_session'))) {
                     this.data.checklist.game_start = true;
                 }
 
                 // Firebase Init Detection
                 if (!this.data.checklist.firebase_init &&
-                   (line.includes('FirebaseApp initialized') || line.includes('App measurement initialized') || line.includes('FA initialized'))) {
+                    (line.includes('FirebaseApp initialized') || line.includes('App measurement initialized') || line.includes('FA initialized'))) {
                     this.data.checklist.firebase_init = true;
                 }
 
                 // AppsFlyer Detection
                 if (!this.data.checklist.appsflyer &&
-                   (line.includes('AppsFlyerLib') || lowLine.includes('af_event') || lowLine.includes('af_start'))) {
+                    (line.includes('AppsFlyerLib') || lowLine.includes('af_event') || lowLine.includes('af_start'))) {
                     this.data.checklist.appsflyer = true;
                 }
 
                 // Splash Screen Detection (Log based)
                 if (!this.data.checklist.splash_screen &&
-                   (lowLine.includes('splash') || lowLine.includes('loading') || line.includes('LoadingScreen') || lowLine.includes('scene \'splash\''))) {
+                    (lowLine.includes('splash') || lowLine.includes('loading') || line.includes('LoadingScreen') || lowLine.includes('scene \'splash\''))) {
                     this.data.checklist.splash_screen = true;
                 }
 
@@ -328,8 +341,15 @@ class RuntimeIntelligence {
                     if (lastTime === undefined || (eventTime - lastTime) > 2.0) {
                         this._lastEventTimes.set(tlName, eventTime);
                         this.data.events.push({ name: tlName, category: tlCategory, detail: tlDetail, time: eventTime });
-                        if (this.data.events.length > 200) this.data.events.shift();
+                        if (this.data.events.length > 300) this.data.events.shift();
                     }
+                }
+
+                // EventEngine: detect business events (GA, Facebook, IAP, AppsFlyer, Adjust, Lifecycle)
+                const engineEvent = this._eventEngine.parseLine(line, packageName, this.activePids);
+                if (engineEvent) {
+                    this.data.events.push(engineEvent);
+                    if (this.data.events.length > 300) this.data.events.shift();
                 }
             }
         }
@@ -344,7 +364,7 @@ class RuntimeIntelligence {
                 if (!this.activePids) this.activePids = new Set();
                 pids.forEach(p => this.activePids.add(p));
             }
-        } catch (e) {}
+        } catch (e) { }
     }
 
     addAdType(type) {
@@ -488,7 +508,7 @@ class RuntimeIntelligence {
             ];
 
             let listOut = await adbHelper.runADB(['-s', deviceId, 'shell', 'unzip', '-l', apkPath]);
-            
+
             if (!listOut || listOut.includes('not found') || listOut.includes('No such file')) {
                 console.warn('[RuntimeIntelligence] unzip not available on device. Falling back to log analysis.');
                 this.data.insights.push('⚠ APK binary scan skipped (unzip unavailable on device), using runtime fallback');
@@ -530,12 +550,38 @@ class RuntimeIntelligence {
                     'android.permission.RECORD_AUDIO',
                     'android.permission.CALL_PHONE'
                 ];
-                const hasDangerous = dangerousPerms.some(perm => dumpOut.includes(perm));
+                const hasDangerous = dangerousPerms.some(perm => dumpOut.includes(`${perm}: granted=true`));
                 this.data.checklist.safe_permissions = !hasDangerous;
             }
 
         } catch (err) {
             console.error('[RuntimeIntelligence] Binary scan failed:', err.message);
+        }
+    }
+
+    /**
+     * One-shot heap memory scan for SDK keys.
+     * Only works on debuggable builds (debug APK or QA build).
+     */
+    async runMemoryScan(deviceId, packageName) {
+        if (!deviceId || !packageName || !this.data.sdkIntelligence) return;
+        // Get PID if not yet known
+        await this.updateAppPid(deviceId, packageName);
+        const pid = this.activePids ? [...this.activePids][0] : null;
+        if (!pid) return;
+
+        const memoryScanner = require('./memoryScanner');
+        const result = await memoryScanner.scanMemory(deviceId, packageName, pid, this.data.sdkIntelligence);
+
+        if (result === -1) {
+            console.log('[MemoryScan] App is not debuggable — memory scan skipped');
+            this.data.sdkIntelligence.memoryScanStatus = 'not_debuggable';
+        } else if (result > 0) {
+            console.log(`[MemoryScan] Found ${result} new key(s) from heap memory`);
+            sdkIntelligence.finalize(this.data.sdkIntelligence);
+            this.data.sdkIntelligence.memoryScanStatus = 'done';
+        } else {
+            this.data.sdkIntelligence.memoryScanStatus = 'done';
         }
     }
 
@@ -546,9 +592,9 @@ class RuntimeIntelligence {
 
             // Map visible activity patterns → specific SDK ID to call markRuntime
             const adSdkMap = [
-                { sdkId: 'admob',     patterns: ['com.google.android.gms.ads', 'InterstitialAdActivity', 'RewardedAdActivity', 'AdActivity'] },
+                { sdkId: 'admob', patterns: ['com.google.android.gms.ads', 'InterstitialAdActivity', 'RewardedAdActivity', 'AdActivity'] },
                 { sdkId: 'unity_ads', patterns: ['com.unity3d.services.ads', 'com.unity3d.ads'] },
-                { sdkId: 'applovin',  patterns: ['com.applovin'] },
+                { sdkId: 'applovin', patterns: ['com.applovin'] },
             ];
             const adActivityPatterns = adSdkMap.flatMap(e => e.patterns).concat(['com.ironsource.mediationsdk']);
             const adVisible = adActivityPatterns.some(p => topActivity.includes(p));
@@ -622,7 +668,7 @@ class RuntimeIntelligence {
                     }
                 }
             }
-        } catch (e) {}
+        } catch (e) { }
     }
 
     /**
@@ -635,20 +681,34 @@ class RuntimeIntelligence {
 
         try {
             const output = await adbHelper.runADB(['-s', deviceId, 'shell', 'dumpsys', 'package', packageName]);
-            const grantedSection = output.indexOf('install permissions:');
+            const permissions = [];
 
-            if (grantedSection !== -1) {
-                const lines = output.substring(grantedSection).split('\n');
-                const permissions = [];
-                for (const line of lines) {
+            // Install permissions (static grants at install time)
+            const installIdx = output.indexOf('install permissions:');
+            if (installIdx !== -1) {
+                for (const line of output.substring(installIdx).split('\n')) {
+                    if (line.includes('runtime permissions:')) break;
                     if (line.includes('granted=true')) {
                         const match = line.match(/android\.permission\.[A-Z_]+/);
                         if (match) permissions.push(match[0]);
                     }
-                    if (line.includes('runtime permissions:')) break;
                 }
-                this.data.grantedPermissions = [...new Set(permissions)];
             }
+
+            // Runtime permissions (user-granted dangerous permissions — CAMERA, LOCATION, etc.)
+            const runtimeIdx = output.indexOf('runtime permissions:');
+            if (runtimeIdx !== -1) {
+                for (const line of output.substring(runtimeIdx).split('\n').slice(1)) {
+                    // Runtime section ends when a line is no longer a permission entry
+                    if (!line.match(/\s+android\.permission\./)) break;
+                    if (line.includes('granted=true')) {
+                        const match = line.match(/android\.permission\.[A-Z_]+/);
+                        if (match) permissions.push(match[0]);
+                    }
+                }
+            }
+
+            this.data.grantedPermissions = [...new Set(permissions)];
         } catch (err) {
             console.error('[RuntimeIntelligence] Permission check failed:', err.message);
         }
@@ -656,28 +716,57 @@ class RuntimeIntelligence {
 
     /**
      * Real-time network awareness using system traffic stats.
-     * @param {string} deviceId 
+     * Filters by app UID; falls back to /proc/uid_stat on Android 10+.
+     * @param {string} deviceId
+     * @param {string} [packageName]
      */
-    async updateNetworkAwareness(deviceId) {
+    async updateNetworkAwareness(deviceId, packageName) {
         if (!deviceId) return;
 
         try {
-            const stdout = await adbHelper.runADB(['-s', deviceId, 'shell', 'cat', '/proc/net/xt_qtaguid/stats']);
-            if (!stdout) return;
-
-            const lines = stdout.split('\n');
-            let total = 0;
-
-            for (let line of lines) {
-                const parts = line.trim().split(/\s+/);
-                if (parts.length > 7) {
-                    const rx = parseInt(parts[5]) || 0;
-                    const tx = parseInt(parts[7]) || 0;
-                    total += rx + tx;
-                }
+            // Resolve app UID once (networkDomainMonitor caches it)
+            let appUid = null;
+            if (packageName) {
+                try { appUid = await networkDomainMonitor.getAppUid(deviceId, packageName); } catch (e) { }
             }
 
-            if (total > 0) {
+            let total = 0;
+            let gotTraffic = false;
+
+            // Primary: xt_qtaguid (Android < 10) — filter by app UID
+            try {
+                const stdout = await adbHelper.runADB(['-s', deviceId, 'shell', 'cat', '/proc/net/xt_qtaguid/stats']);
+                if (stdout && stdout.trim().length > 10) {
+                    for (const line of stdout.split('\n')) {
+                        const parts = line.trim().split(/\s+/);
+                        if (parts.length < 8) continue;
+                        if (appUid) {
+                            // uid_tag_int = (tag << 32) | uid — extract lower 32 bits
+                            const raw = parts[3];
+                            const entryUid = raw.length <= 10
+                                ? parseInt(raw)
+                                : Number(BigInt(raw) & BigInt(0xFFFFFFFF));
+                            if (entryUid !== parseInt(appUid)) continue;
+                        }
+                        total += (parseInt(parts[5]) || 0) + (parseInt(parts[7]) || 0);
+                    }
+                    if (total > 0) gotTraffic = true;
+                }
+            } catch (e) { }
+
+            // Fallback: /proc/uid_stat/<uid>/ (Android 10+ eBPF)
+            if (!gotTraffic && appUid) {
+                try {
+                    const rcvOut = await adbHelper.runADB(['-s', deviceId, 'shell', 'cat', `/proc/uid_stat/${appUid}/tcp_rcv`]);
+                    const sndOut = await adbHelper.runADB(['-s', deviceId, 'shell', 'cat', `/proc/uid_stat/${appUid}/tcp_snd`]);
+                    const rcv = parseInt(rcvOut) || 0;
+                    const snd = parseInt(sndOut) || 0;
+                    total = rcv + snd;
+                    if (total > 0) gotTraffic = true;
+                } catch (e) { }
+            }
+
+            if (gotTraffic && total > 0) {
                 if (this.lastBytes > 0) {
                     const delta = total - this.lastBytes;
                     if (delta > 0) {
@@ -689,7 +778,7 @@ class RuntimeIntelligence {
                 this.lastBytes = total;
             }
 
-            // Step 2 & 4: Ping Check and Status Logic
+            // Ping check
             const pingOut = await adbHelper.runADB(['-s', deviceId, 'shell', 'ping', '-c', '1', '8.8.8.8'], { timeout: 2000 });
             if (!pingOut || pingOut.includes('100% packet loss') || pingOut.includes('unreachable')) {
                 this.data.networkIntel.disconnects++;
@@ -698,8 +787,7 @@ class RuntimeIntelligence {
             } else {
                 const match = pingOut.match(/time=([\d.]+)\s*ms/);
                 if (match) {
-                    const ping = parseFloat(match[1]);
-                    this.data.networkIntel.ping = Math.round(ping);
+                    this.data.networkIntel.ping = Math.round(parseFloat(match[1]));
                     this.data.networkIntel.status = 'ONLINE';
                 }
             }

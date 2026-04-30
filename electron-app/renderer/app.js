@@ -10,6 +10,7 @@ let sessionState = 'idle'; // idle | running | stopped
 let timerInterval = null;
 let secondsElapsed = 0;
 let _timelineFilter = 'full';
+let _eventsFilter = 'ALL';
 
 // Global persistent state for the active project
 let currentSession = {
@@ -17,6 +18,11 @@ let currentSession = {
     report: null,
     staticAnalysis: null
 };
+
+// ─── UTILITIES ───────────────────────────────────────────────────────────────
+const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, ch => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+}[ch]));
 
 // ─── SDK KEY REFERENCE TABLE ─────────────────────────────────────────────────
 const SDK_KEY_REFERENCE = [
@@ -106,7 +112,7 @@ const liveDashboard = document.getElementById('live-dashboard');
 const liveFps = document.getElementById('live-fps');
 const liveNetwork = document.getElementById('live-network');
 const liveDevice = document.getElementById('live-device');
-const liveMemoryCtx = document.getElementById('live-memory-chart');
+const liveFpsCtx = document.getElementById('live-fps-chart');
 const liveIssuesPanel = document.getElementById('live-issues-panel');
 const liveIssuesList = document.getElementById('live-issues-list');
 const clearLogsBtn = document.getElementById('clear-logs-btn');
@@ -149,7 +155,7 @@ const runtimeFirebase = document.getElementById('runtime-firebase-badge');
 const runtimePermissions = document.getElementById('runtime-permissions-list');
 const runtimeResponseTime = document.getElementById('runtime-response-time');
 const runtimeUiStress = document.getElementById('runtime-ui-stress');
-const runtimePeakMem = document.getElementById('runtime-peak-mem');
+
 const runtimeAvgPing = document.getElementById('runtime-avg-ping');
 const runtimeDataUsed = document.getElementById('runtime-data-used');
 const runtimeDisconnects = document.getElementById('runtime-disconnects');
@@ -158,6 +164,8 @@ const runtimeNetworkStatus = document.getElementById('runtime-network-status');
 const allPermissionsList = document.getElementById('all-permissions-list');
 
 const reportEmptyState = document.getElementById('report-empty-state');
+const eventsContent = document.getElementById('events-content');
+const eventsEmptyState = document.getElementById('events-empty-state');
 const navReport = document.getElementById('nav-report');
 
 const securityRiskLevel = document.getElementById('security-risk-level');
@@ -167,6 +175,154 @@ const exportedComponentsList = document.getElementById('exported-components-list
 const securityDebugStatus = document.getElementById('security-debug-status');
 const securityBackupStatus = document.getElementById('security-backup-status');
 const securityCleartextStatus = document.getElementById('security-cleartext-status');
+
+// ─── AI SETTINGS ─────────────────────────────────────────────────────────────
+const aiApiKeyInput   = document.getElementById('ai-api-key-input');
+const aiSaveBtn       = document.getElementById('ai-save-btn');
+const aiStatusBadge   = document.getElementById('ai-status-badge');
+const aiStatusMsg     = document.getElementById('ai-status-msg');
+
+function updateAIStatusBadge(hasKey) {
+    if (!aiStatusBadge) return;
+    if (hasKey) {
+        aiStatusBadge.textContent = 'ENABLED';
+        aiStatusBadge.style.background = 'rgba(74,222,128,0.12)';
+        aiStatusBadge.style.color = '#4ade80';
+    } else {
+        aiStatusBadge.textContent = 'DISABLED';
+        aiStatusBadge.style.background = 'rgba(63,63,70,0.6)';
+        aiStatusBadge.style.color = '#71717a';
+    }
+}
+
+(async () => {
+    try {
+        const settings = await window.api.getSettings();
+        if (settings && settings.geminiApiKey) {
+            if (aiApiKeyInput) aiApiKeyInput.value = settings.geminiApiKey;
+            updateAIStatusBadge(true);
+        }
+    } catch (e) {}
+})();
+
+if (aiSaveBtn) {
+    aiSaveBtn.addEventListener('click', async () => {
+        const key = aiApiKeyInput ? aiApiKeyInput.value.trim() : '';
+        const res = await window.api.saveSettings({ geminiApiKey: key });
+        if (res && res.success) {
+            updateAIStatusBadge(!!key);
+            if (aiStatusMsg) {
+                aiStatusMsg.style.display = '';
+                aiStatusMsg.textContent = key ? '✔ API key saved. AI classification is active.' : 'API key cleared.';
+                aiStatusMsg.style.color = key ? '#4ade80' : '#a1a1aa';
+                setTimeout(() => { if (aiStatusMsg) aiStatusMsg.style.display = 'none'; }, 3000);
+            }
+        }
+    });
+}
+
+// ─── PROXY STATUS (PHASE 3) ──────────────────────────────────────────────────
+const proxyStatusBadge    = document.getElementById('proxy-status-badge');
+const proxyInterceptInfo  = document.getElementById('proxy-intercepted-info');
+const proxyInterceptCount = document.getElementById('proxy-intercept-count');
+const proxyCertHint       = document.getElementById('proxy-cert-hint');
+const installCertBtn      = document.getElementById('install-cert-btn');
+
+function updateProxyUI(status) {
+    if (!proxyStatusBadge) return;
+    if (status && status.active) {
+        proxyStatusBadge.textContent = 'ACTIVE';
+        proxyStatusBadge.style.background = 'rgba(45,212,191,0.15)';
+        proxyStatusBadge.style.color = '#2dd4bf';
+        if (proxyInterceptInfo) proxyInterceptInfo.style.display = '';
+        if (proxyInterceptCount) proxyInterceptCount.textContent = status.intercepted || 0;
+        if (proxyCertHint) proxyCertHint.style.display = status.certExists ? 'none' : '';
+    } else {
+        proxyStatusBadge.textContent = 'INACTIVE';
+        proxyStatusBadge.style.background = 'rgba(63,63,70,0.6)';
+        proxyStatusBadge.style.color = '#71717a';
+        if (proxyInterceptInfo) proxyInterceptInfo.style.display = 'none';
+        if (status && status.lastError) {
+            if (proxyCertHint) {
+                proxyCertHint.style.display = '';
+                proxyCertHint.textContent = `⚠ Proxy error: ${status.lastError}`;
+            }
+            if (status.lastError !== _proxyLastError) {
+                _proxyLastError = status.lastError;
+                addLog(`⚠ MITM Proxy inactive: ${status.lastError}`, 'warn');
+            }
+        }
+    }
+}
+
+// Poll proxy status every 4 seconds when session is running
+let _proxyPollInterval = null;
+let _proxyLastError = null;
+function startProxyPoll() {
+    if (_proxyPollInterval) return;
+    // Check once after 1.5s to show proxy status right after session starts
+    setTimeout(async () => {
+        try {
+            const s = await window.api.getProxyStatus();
+            updateProxyUI(s);
+        } catch {}
+    }, 1500);
+    _proxyPollInterval = setInterval(async () => {
+        try {
+            const s = await window.api.getProxyStatus();
+            updateProxyUI(s);
+            if (proxyInterceptCount && s) proxyInterceptCount.textContent = s.intercepted || 0;
+        } catch {}
+    }, 4000);
+}
+function stopProxyPoll() {
+    if (_proxyPollInterval) { clearInterval(_proxyPollInterval); _proxyPollInterval = null; }
+    _proxyLastError = null;
+    updateProxyUI({ active: false });
+}
+
+function showCertInstallGuide() {
+    const guide = document.getElementById('cert-install-guide');
+    if (guide) { guide.style.display = ''; return; }
+
+    // Create the guide div dynamically and insert after the proxy card
+    const card = document.getElementById('proxy-status-card');
+    if (!card) return;
+    const div = document.createElement('div');
+    div.id = 'cert-install-guide';
+    div.style.cssText = 'margin-bottom:12px;padding:10px 16px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.25);border-radius:8px;font-size:11px;color:#d4a017;line-height:1.7;';
+    div.innerHTML =
+        '<b>📱 Cert saved to device Internal Storage → testmate-ca.crt</b><br>' +
+        'Install it as a CA certificate:<br>' +
+        '<b>Samsung:</b> Settings → Biometrics &amp; Security → Other Security Settings → Install from Device Storage<br>' +
+        '<b>Pixel / Stock Android:</b> Settings → Security → Encryption &amp; Credentials → Install a Certificate → CA Certificate<br>' +
+        '<b>Xiaomi / MIUI:</b> Settings → Privacy → Encryption &amp; Credentials → Install a Certificate<br>' +
+        '<small style="color:#a16207">Select <em>testmate-ca.crt</em> from Internal Storage and name it "TestMate AI"</small>';
+    card.insertAdjacentElement('afterend', div);
+}
+
+if (installCertBtn) {
+    installCertBtn.addEventListener('click', async () => {
+        installCertBtn.disabled = true;
+        installCertBtn.textContent = 'Installing…';
+        try {
+            const res = await window.api.installCACert();
+            if (res.success) {
+                if (res.result === 'installed') {
+                    installCertBtn.textContent = '✔ Installed';
+                    if (proxyCertHint) proxyCertHint.style.display = 'none';
+                } else {
+                    installCertBtn.textContent = '✔ Cert Pushed';
+                    showCertInstallGuide();
+                }
+            } else {
+                installCertBtn.textContent = 'Failed';
+                addLog(`❌ CA cert install failed: ${res.message}`, 'error');
+            }
+        } catch { installCertBtn.textContent = 'Error'; }
+        setTimeout(() => { installCertBtn.textContent = 'Install CA Cert'; installCertBtn.disabled = false; }, 4000);
+    });
+}
 
 // ─── TAB NAVIGATION ──────────────────────────────────────────────────────────
 navBtns.forEach(btn => {
@@ -188,8 +344,10 @@ function switchTab(tabId) {
 
     // Trigger data renders based on tab
     if (tabId === 'runtime') {
-        console.log("Runtime Data State:", currentSession.runtime);
         renderRuntimeTab(currentSession.runtime);
+    }
+    if (tabId === 'events') {
+        renderEventsTab(currentSession.runtime);
     }
 
     if (tabId === 'report') {
@@ -587,6 +745,19 @@ startBtn.addEventListener('click', async () => {
     liveFps.textContent = '--';
     liveNetwork.textContent = '--';
     liveDevice.textContent = '--';
+    if (livePing) livePing.textContent = '-- ms';
+    const _battLive = document.getElementById('status-battery-live');
+    if (_battLive) _battLive.textContent = '--%';
+    // Reset FPS tracker for new session
+    window._fpsTracker = null;
+    const _fpsResetEls = ['fps-min', 'fps-avg', 'fps-peak'];
+    _fpsResetEls.forEach(id => { const el = document.getElementById(id); if (el) el.textContent = '--'; });
+    const _ql = document.getElementById('fps-quality-label');
+    if (_ql) { _ql.textContent = 'WAITING'; _ql.style.color = '#52525b'; _ql.style.background = 'rgba(63,63,70,0.5)'; }
+    const _bar = document.getElementById('fps-bar');
+    if (_bar) _bar.style.width = '0%';
+    const _dot = document.getElementById('fps-indicator-dot');
+    if (_dot) { _dot.style.background = '#3f3f46'; _dot.style.boxShadow = 'none'; }
     initLiveChart();
 
     // Fetch device info once per session
@@ -606,6 +777,7 @@ startBtn.addEventListener('click', async () => {
     if (res.success) {
         addLog(res.message, 'success');
         updateSessionState('running');
+        startProxyPoll();
 
         // Reset Global Session State
         currentSession.runtime = null;
@@ -634,6 +806,7 @@ stopBtn.addEventListener('click', async () => {
 
     const res = await window.api.stopTest();
     stopBtn.textContent = originalText;
+    stopProxyPoll();
 
     if (res.success) {
         addLog(res.message, 'success');
@@ -810,39 +983,81 @@ async function loadHistoryItem(sessionId, el) {
     }
 }
 
-// ─── REPORT RENDERER ─────────────────────────────────────────────────────────
-let liveMemoryChart = null;
+// ─── LIVE FPS CHART ───────────────────────────────────────────────────────────
+let liveFpsChart = null;
+let _fpsPointColors = [];
+const FPS_WINDOW = 60;
+const REF_LINE = Array(FPS_WINDOW).fill(null);
 
 function initLiveChart() {
-    if (liveMemoryChart) liveMemoryChart.destroy();
-    liveMemoryChart = new Chart(liveMemoryCtx, {
+    if (liveFpsChart) liveFpsChart.destroy();
+    _fpsPointColors = [];
+    liveFpsChart = new Chart(liveFpsCtx, {
         type: 'line',
         data: {
-            labels: [],
-            datasets: [{
-                label: 'Memory (MB)',
-                data: [],
-                borderColor: '#a78bfa',
-                backgroundColor: 'rgba(167, 139, 250, 0.2)',
-                borderWidth: 2,
-                fill: true,
-                tension: 0.4,
-                pointRadius: 0
-            }]
+            labels: Array(FPS_WINDOW).fill(''),
+            datasets: [
+                {
+                    label: 'FPS',
+                    data: Array(FPS_WINDOW).fill(null),
+                    borderColor: '#2dd4bf',
+                    backgroundColor: 'rgba(45,212,191,0.07)',
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0,
+                    pointRadius: 2,
+                    pointBackgroundColor: Array(FPS_WINDOW).fill('#2dd4bf'),
+                    pointBorderWidth: 0,
+                    spanGaps: false
+                },
+                {
+                    label: '60fps',
+                    data: Array(FPS_WINDOW).fill(60),
+                    borderColor: 'rgba(45,212,191,0.2)',
+                    borderWidth: 1,
+                    borderDash: [4, 4],
+                    pointRadius: 0,
+                    fill: false,
+                    tension: 0
+                },
+                {
+                    label: '30fps',
+                    data: Array(FPS_WINDOW).fill(30),
+                    borderColor: 'rgba(248,113,113,0.3)',
+                    borderWidth: 1,
+                    borderDash: [4, 4],
+                    pointRadius: 0,
+                    fill: false,
+                    tension: 0
+                }
+            ]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            animation: { duration: 0 },
+            animation: { 
+                duration: 400,
+                easing: 'linear'
+            },
             scales: {
                 x: { display: false },
-                y: { display: true, beginAtZero: true, grid: { color: '#27272a' }, ticks: { color: '#a1a1aa', font: { size: 10 } } }
+                y: {
+                    display: true,
+                    min: 0,
+                    max: 120,
+                    grid: { color: 'rgba(255,255,255,0.04)' },
+                    ticks: {
+                        color: '#71717a',
+                        font: { size: 10 },
+                        stepSize: 30,
+                        callback: v => v === 0 ? '' : `${v}`
+                    }
+                }
             },
-            plugins: {
-                legend: { display: false }
-            }
+            plugins: { legend: { display: false } }
         }
     });
+    _fpsPointColors = Array(FPS_WINDOW).fill('#2dd4bf');
 }
 
 if (window.api.onLiveData) {
@@ -856,12 +1071,60 @@ if (window.api.onLiveData) {
         }
 
         if (!liveDashboard.classList.contains('hidden')) {
-            liveFps.textContent = data.fps;
+            // FPS gauge — color coding, quality label, progress bar, min/avg/max
+            const fpsNum = parseInt(data.fps);
+            if (liveFps) liveFps.textContent = isNaN(fpsNum) ? '--' : fpsNum;
+
+            if (!isNaN(fpsNum)) {
+                // Color thresholds: smooth ≥55, playable ≥30, choppy <30
+                const fpsColor  = fpsNum >= 55 ? '#2dd4bf' : fpsNum >= 30 ? '#fbbf24' : '#f87171';
+                const fpsLabel  = fpsNum >= 55 ? 'SMOOTH'  : fpsNum >= 30 ? 'PLAYABLE' : 'CHOPPY';
+                const fpsBarPct = Math.min(100, Math.round((fpsNum / 120) * 100));
+
+                if (liveFps) { liveFps.style.color = fpsColor; liveFps.style.textShadow = `0 0 12px ${fpsColor}55`; }
+
+                const dot = document.getElementById('fps-indicator-dot');
+                if (dot) { dot.style.background = fpsColor; dot.style.boxShadow = `0 0 6px ${fpsColor}`; }
+
+                const bar = document.getElementById('fps-bar');
+                if (bar) { bar.style.width = `${fpsBarPct}%`; bar.style.background = fpsColor; }
+
+                const ql = document.getElementById('fps-quality-label');
+                if (ql) {
+                    ql.textContent = fpsLabel;
+                    ql.style.color = fpsColor;
+                    ql.style.background = `${fpsColor}18`;
+                }
+
+                // Track min/avg/max across session
+                if (!window._fpsTracker) window._fpsTracker = { min: fpsNum, max: fpsNum, sum: fpsNum, count: 1 };
+                else {
+                    const t = window._fpsTracker;
+                    t.min = Math.min(t.min, fpsNum);
+                    t.max = Math.max(t.max, fpsNum);
+                    t.sum += fpsNum;
+                    t.count++;
+                    const avg = Math.round(t.sum / t.count);
+                    const minEl = document.getElementById('fps-min');
+                    const avgEl = document.getElementById('fps-avg');
+                    const peakEl = document.getElementById('fps-peak');
+                    if (minEl) minEl.textContent = t.min;
+                    if (avgEl) { avgEl.textContent = avg; avgEl.style.color = avg >= 55 ? '#2dd4bf' : avg >= 30 ? '#fbbf24' : '#f87171'; }
+                    if (peakEl) peakEl.textContent = t.max;
+                }
+            }
+
             liveNetwork.textContent = data.network;
             liveDevice.textContent = data.device;
 
             if (data.battery && data.battery !== 'Unknown') {
                 if (statusBattery) statusBattery.textContent = `${data.battery}%`;
+                const battLive = document.getElementById('status-battery-live');
+                if (battLive) {
+                    battLive.textContent = `${data.battery}%`;
+                    const pct = parseInt(data.battery);
+                    battLive.style.color = pct > 50 ? '#4ade80' : pct > 20 ? '#fbbf24' : '#f87171';
+                }
             }
 
             if (data.advanced) {
@@ -878,17 +1141,32 @@ if (window.api.onLiveData) {
                     if (document.getElementById('tab-runtime').classList.contains('active')) {
                         renderRuntimeTab(currentSession.runtime);
                     }
+                    if (document.getElementById('tab-events').classList.contains('active')) {
+                        renderEventsTab(currentSession.runtime);
+                    }
                 }
             }
 
-            if (liveMemoryChart) {
-                liveMemoryChart.data.labels.push('');
-                liveMemoryChart.data.datasets[0].data.push(data.memory);
-                if (liveMemoryChart.data.labels.length > 20) {
-                    liveMemoryChart.data.labels.shift();
-                    liveMemoryChart.data.datasets[0].data.shift();
+            // FPS chart — 60-second sliding window, per-point jank coloring
+            if (liveFpsChart && !isNaN(fpsNum)) {
+                const ptColor = fpsNum >= 55 ? '#2dd4bf' : fpsNum >= 30 ? '#fbbf24' : '#f87171';
+                const ds = liveFpsChart.data.datasets[0];
+                ds.data.push(fpsNum);
+                ds.pointBackgroundColor.push(ptColor);
+                liveFpsChart.data.labels.push('');
+                if (ds.data.length > FPS_WINDOW) {
+                    ds.data.shift();
+                    ds.pointBackgroundColor.shift();
+                    liveFpsChart.data.labels.shift();
                 }
-                liveMemoryChart.update();
+                liveFpsChart.update();
+            }
+
+            // Memory stat - removed from dashboard
+            
+            // CPU / Jank / FrameTime from advanced telemetry - removed from dashboard
+            if (data.advanced) {
+                // We keep the advanced insights data gathering but stop updating the removed UI elements
             }
 
             if (data.issues && data.issues.length > 0) {
@@ -1004,13 +1282,7 @@ function renderRuntimeTab(runtime) {
     runtimeEngine.textContent = runtime.engine || 'Native';
     runtimeNetwork.textContent = runtime.networkCalls || 0;
 
-    const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, ch => ({
-        '&': '&amp;',
-        '<': '&lt;',
-        '>': '&gt;',
-        '"': '&quot;',
-        "'": '&#39;'
-    }[ch]));
+
 
     const sdkIntel = runtime.sdkIntelligence || null;
     const sdkList = sdkIntel?.sdks ? Object.values(sdkIntel.sdks) : [];
@@ -1025,7 +1297,8 @@ function renderRuntimeTab(runtime) {
         ATTRIBUTION: { bg: 'rgba(167,139,250,0.15)',  color: '#a78bfa', border: 'rgba(167,139,250,0.3)' },
         BACKEND:     { bg: 'rgba(251,146,60,0.15)',   color: '#fb923c', border: 'rgba(251,146,60,0.3)' },
         IAP:         { bg: 'rgba(74,222,128,0.15)',   color: '#4ade80', border: 'rgba(74,222,128,0.3)' },
-        MONITORING:  { bg: 'rgba(244,114,182,0.15)',  color: '#f472b6', border: 'rgba(244,114,182,0.3)' }
+        MONITORING:  { bg: 'rgba(244,114,182,0.15)',  color: '#f472b6', border: 'rgba(244,114,182,0.3)' },
+        SECURITY:    { bg: 'rgba(248,113,113,0.15)',  color: '#f87171', border: 'rgba(248,113,113,0.3)' }
     };
 
     // Stats strip
@@ -1038,45 +1311,69 @@ function renderRuntimeTab(runtime) {
     if (statKeys)     statKeys.textContent     = sdkIntel ? (sdkIntel.keyStats?.keysFound ?? 0) : '—';
     if (statDanger)   statDanger.textContent   = sdkIntel ? (sdkIntel.keyStats?.dangerKeys ?? 0) : '—';
 
-    // SDK panels grid
-    const sdkPanelsGrid = document.getElementById('sdk-panels-grid');
-    if (sdkPanelsGrid) {
+    // SDK two-column split: Found in APK | Active During Gameplay
+    const sdkApkList      = document.getElementById('sdk-apk-list');
+    const sdkGameplayList = document.getElementById('sdk-gameplay-list');
+
+    if (sdkApkList) {
         if (!sdkIntel || detectedSDKs.length === 0) {
-            sdkPanelsGrid.innerHTML = '<div style="font-size: 12px; color: #52525b; padding: 16px; text-align: center;">No SDKs detected — run static analysis first</div>';
+            sdkApkList.innerHTML = '<div style="font-size:13px;color:#71717a;padding:14px;text-align:center;">No SDKs detected — run static analysis first</div>';
         } else {
-            const rows = [];
+            const apkRows = [];
             for (const category of ['ADS', 'ANALYTICS', 'ATTRIBUTION', 'BACKEND', 'IAP', 'MONITORING']) {
                 const sdks = sdkByCategory(category);
                 if (!sdks.length) continue;
                 const c = CATEGORY_STYLE[category] || CATEGORY_STYLE.ADS;
                 for (const sdk of sdks) {
-                    const isActive = sdk.status === 'Active';
-                    const statusBg    = isActive ? 'rgba(45,212,191,0.15)' : 'rgba(251,191,36,0.12)';
-                    const statusColor = isActive ? '#2dd4bf' : '#fbbf24';
-                    const statusText  = isActive ? '✔ Active' : 'Installed · Not Active';
-                    const sources = (sdk.sources || []).map(s =>
-                        s === 'dex' ? 'DEX scan' : s === 'manifest' ? 'Manifest' : s === 'runtime' ? 'Runtime' : s
-                    ).join(' + ');
-                    let meta = '';
-                    if (sdk.runtime?.count > 0) {
-                        meta = `${sdk.runtime.count} events`;
-                        if (sdk.runtime.firstEventTime != null) meta += ` · First: ${sdk.runtime.firstEventTime}s`;
-                        if (sdk.runtime.adTypes?.length) meta += ` · ${sdk.runtime.adTypes.join('/')}`;
-                    } else if (runtime.hasRuntimeData) {
-                        meta = 'No runtime activity';
-                    }
-                    rows.push(`
-                        <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.07);border-radius:8px;">
-                            <div style="font-size:9px;font-weight:700;text-transform:uppercase;background:${c.bg};color:${c.color};border:1px solid ${c.border};padding:3px 8px;border-radius:4px;min-width:80px;text-align:center;letter-spacing:0.05em;flex-shrink:0;">${escapeHtml(category)}</div>
+                    const sdkKeys = (sdkIntel.keys || []).filter(k => k.sdk === sdk.name);
+                    const keyBadges = sdkKeys.map(k =>
+                        `<span style="font-size:11px;font-weight:600;background:rgba(99,102,241,0.15);color:#a5b4fc;border:1px solid rgba(99,102,241,0.3);padding:2px 6px;border-radius:3px;white-space:nowrap;">${escapeHtml(k.keyType)}</span>`
+                    ).join('');
+                    const sources = [...new Set((sdk.sources || [])
+                        .filter(s => s !== 'runtime')
+                        .map(s => s === 'dex' ? 'DEX' : s === 'manifest' ? 'Manifest' : 'APK')
+                    )].join(' · ');
+                    apkRows.push(`
+                        <div style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.07);border-radius:7px;">
+                            <div style="font-size:11px;font-weight:700;text-transform:uppercase;background:${c.bg};color:${c.color};border:1px solid ${c.border};padding:3px 6px;border-radius:4px;min-width:68px;text-align:center;letter-spacing:0.04em;flex-shrink:0;margin-top:2px;">${escapeHtml(category)}</div>
                             <div style="flex:1;min-width:0;">
                                 <div style="font-size:13px;font-weight:600;color:#e4e4e7;">${escapeHtml(sdk.name)}</div>
-                                <div style="font-size:11px;color:#71717a;margin-top:2px;">Detected via ${escapeHtml(sources || 'static')}${meta ? ' · ' + escapeHtml(meta) : ''}</div>
+                                <div style="font-size:11px;color:#a1a1aa;margin-top:3px;">${escapeHtml(sources)}</div>
+                                ${keyBadges ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;">${keyBadges}</div>` : ''}
                             </div>
-                            <div style="font-size:11px;font-weight:600;padding:4px 12px;border-radius:20px;background:${statusBg};color:${statusColor};white-space:nowrap;flex-shrink:0;">${statusText}</div>
                         </div>`);
                 }
             }
-            sdkPanelsGrid.innerHTML = rows.join('');
+            sdkApkList.innerHTML = apkRows.join('');
+        }
+    }
+
+    if (sdkGameplayList) {
+        const activeSDKsList = detectedSDKs.filter(s => s.status === 'Active');
+        if (!sdkIntel || !runtime.hasRuntimeData) {
+            sdkGameplayList.innerHTML = '<div style="font-size:13px;color:#71717a;padding:14px;text-align:center;">Run a test session to see runtime activity…</div>';
+        } else if (activeSDKsList.length === 0) {
+            sdkGameplayList.innerHTML = '<div style="font-size:13px;color:#71717a;padding:14px;text-align:center;">No SDK activity detected during gameplay</div>';
+        } else {
+            const gameplayRows = activeSDKsList.map(sdk => {
+                const c  = CATEGORY_STYLE[sdk.category] || CATEGORY_STYLE.ADS;
+                const rt = sdk.runtime || {};
+                const meta = [
+                    rt.count > 0 ? `${rt.count} events` : null,
+                    rt.firstEventTime != null ? `First: ${rt.firstEventTime}s` : null,
+                    rt.adTypes?.length ? rt.adTypes.join('/') : null
+                ].filter(Boolean).join(' · ');
+                return `
+                    <div style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;background:rgba(45,212,191,0.04);border:1px solid rgba(45,212,191,0.15);border-radius:7px;">
+                        <div style="font-size:11px;font-weight:700;text-transform:uppercase;background:${c.bg};color:${c.color};border:1px solid ${c.border};padding:3px 6px;border-radius:4px;min-width:68px;text-align:center;letter-spacing:0.04em;flex-shrink:0;margin-top:2px;">${escapeHtml(sdk.category)}</div>
+                        <div style="flex:1;min-width:0;">
+                            <div style="font-size:13px;font-weight:600;color:#e4e4e7;">${escapeHtml(sdk.name)}</div>
+                            ${meta ? `<div style="font-size:11px;color:#a1a1aa;margin-top:3px;">${escapeHtml(meta)}</div>` : ''}
+                        </div>
+                        <div style="font-size:11px;font-weight:700;color:#2dd4bf;background:rgba(45,212,191,0.1);border:1px solid rgba(45,212,191,0.2);padding:3px 9px;border-radius:10px;flex-shrink:0;margin-top:2px;">ACTIVE</div>
+                    </div>`;
+            });
+            sdkGameplayList.innerHTML = gameplayRows.join('');
         }
     }
 
@@ -1087,44 +1384,77 @@ function renderRuntimeTab(runtime) {
             sdkExtractedSection.innerHTML = '<span style="font-size:11px;color:#52525b;">Waiting for APK analysis…</span>';
         } else if (sdkIntel.keys && sdkIntel.keys.length > 0) {
             const stats = sdkIntel.keyStats || {};
-            const keyRows = sdkIntel.keys.map(key => {
-                const isValid    = key.status === 'Valid format';
-                const icon       = isValid ? '✔' : '⚠';
-                const color      = isValid ? '#2dd4bf' : '#fbbf24';
-                const valueMask  = key.value.length > 48 ? key.value.substring(0, 48) + '…' : key.value;
-                const refEntry   = SDK_KEY_REFERENCE.find(r => r.sdk === key.sdk || r.keyLabel === key.keyName);
-                const category   = refEntry?.category || '';
-                const searchText = `${key.sdk} ${key.keyName} ${key.value} ${category}`.toLowerCase();
-                return `
-                    <div data-sdk-row="1" data-sdk-text="${escapeHtml(searchText)}" data-sdk-cat="${escapeHtml(category)}"
-                         style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.07);border-radius:7px;">
-                        <span style="color:${color};font-size:13px;flex-shrink:0;margin-top:1px;">${icon}</span>
+            // Group keys by category for visual sections
+            const keysByCategory = {};
+            for (const key of sdkIntel.keys) {
+                const cat = key.category || (SDK_KEY_REFERENCE.find(r => r.sdk === key.sdk)?.category) || 'OTHER';
+                if (!keysByCategory[cat]) keysByCategory[cat] = [];
+                keysByCategory[cat].push(key);
+            }
+            const catOrder = ['SECURITY', 'ADS', 'ANALYTICS', 'ATTRIBUTION', 'BACKEND', 'IAP', 'MONITORING', 'OTHER'];
+            const sections = [];
+            for (const cat of catOrder) {
+                const keys = keysByCategory[cat];
+                if (!keys?.length) continue;
+                const c = CATEGORY_STYLE[cat] || { bg: 'rgba(113,113,122,0.15)', color: '#a1a1aa', border: 'rgba(113,113,122,0.3)' };
+                sections.push(`<div data-sdk-row="1" data-sdk-text="" data-sdk-cat="${escapeHtml(cat)}" style="font-size:11px;font-weight:700;text-transform:uppercase;color:${c.color};letter-spacing:0.08em;padding:6px 2px;border-bottom:1px solid ${c.border};margin-top:8px;">${escapeHtml(cat)}</div>`);
+                for (const key of keys) {
+                    const statusColor = key.status === 'Valid'                  ? '#2dd4bf'
+                                      : key.status === 'Server Key Exposed'     ? '#f87171'
+                                      : key.status === 'Test Key in Production' ? '#f97316'
+                                      : '#fbbf24';
+                    const statusBg    = key.status === 'Valid'                  ? 'rgba(45,212,191,0.12)'
+                                      : key.status === 'Server Key Exposed'     ? 'rgba(248,113,113,0.12)'
+                                      : key.status === 'Test Key in Production' ? 'rgba(249,115,22,0.12)'
+                                      : 'rgba(251,191,36,0.12)';
+                    const valueMask   = key.value.length > 56 ? key.value.substring(0, 56) + '…' : key.value;
+                    const keyType     = key.keyType || key.keyName || '';
+                    const searchText  = `${key.sdk} ${key.keyName} ${key.value} ${cat} ${keyType}`.toLowerCase();
+                    const src         = key.source || '';
+                    const sourceLabel = src === 'manifest' ? 'Manifest'
+                                      : src === 'dex' ? 'DEX'
+                                      : src === 'resources.arsc' ? 'resources.arsc'
+                                      : src === 'native-lib' ? 'Native (.so)'
+                                      : src === 'logcat' ? 'Logcat (Runtime)'
+                                      : src === 'memory' ? 'Memory Scan'
+                                      : src.includes('google-services') ? 'google-services.json'
+                                      : src.includes('assets/') ? src.split('assets/')[1] || 'Assets'
+                                      : src ? src.split('/').pop() || 'APK' : 'APK';
+                    sections.push(`
+                    <div data-sdk-row="1" data-sdk-text="${escapeHtml(searchText)}" data-sdk-cat="${escapeHtml(cat)}"
+                         style="display:flex;align-items:flex-start;gap:12px;padding:12px 14px;background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.07);border-radius:7px;">
                         <div style="flex:1;min-width:0;">
-                            <div style="font-size:12px;font-weight:600;color:#e4e4e7;">${escapeHtml(key.sdk)} — ${escapeHtml(key.keyName)}</div>
-                            <div style="font-size:11px;color:#71717a;font-family:monospace;margin-top:3px;word-break:break-all;">${escapeHtml(valueMask)}</div>
+                            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                                <span style="font-size:13px;font-weight:600;color:#e4e4e7;">${escapeHtml(key.sdk)}</span>
+                                <span style="font-size:11px;font-weight:700;text-transform:uppercase;background:rgba(99,102,241,0.15);color:#a5b4fc;border:1px solid rgba(99,102,241,0.3);padding:2px 7px;border-radius:4px;letter-spacing:0.05em;">${escapeHtml(keyType)}</span>
+                            </div>
+                            <div style="font-size:12px;color:#c4b5fd;font-family:monospace;margin-top:6px;word-break:break-all;letter-spacing:0.01em;">${escapeHtml(valueMask)}</div>
+                            <div style="font-size:11px;color:#71717a;margin-top:4px;">Found in: <span style="color:#a1a1aa;">${escapeHtml(sourceLabel)}</span></div>
                         </div>
-                        <div style="font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;background:${isValid ? 'rgba(45,212,191,0.12)' : 'rgba(251,191,36,0.12)'};color:${color};flex-shrink:0;white-space:nowrap;">${escapeHtml(key.status)}</div>
-                    </div>`;
-            }).join('');
+                        <div style="font-size:11px;font-weight:600;padding:3px 10px;border-radius:10px;background:${statusBg};color:${statusColor};flex-shrink:0;white-space:nowrap;margin-top:2px;">${escapeHtml(key.status)}</div>
+                    </div>`);
+                }
+            }
+            const keyRows = sections.join('');
             sdkExtractedSection.innerHTML = keyRows + `
-                <div style="display:flex;gap:20px;flex-wrap:wrap;margin-top:8px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.05);">
-                    <span style="font-size:11px;color:#71717a;">Patterns checked: <strong style="color:#a1a1aa;">${stats.keyPatternsChecked || 0}+</strong></span>
-                    <span style="font-size:11px;color:#71717a;">Danger keys: <strong style="color:${(stats.dangerKeys || 0) > 0 ? '#f87171' : '#4ade80'};">${stats.dangerKeys || 0}</strong></span>
+                <div style="display:flex;gap:20px;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.05);">
+                    <span style="font-size:12px;color:#a1a1aa;">Patterns checked: <strong style="color:#d4d4d8;">${stats.keyPatternsChecked || 0}+</strong></span>
+                    <span style="font-size:12px;color:#a1a1aa;">Danger keys: <strong style="color:${(stats.dangerKeys || 0) > 0 ? '#f87171' : '#4ade80'};">${stats.dangerKeys || 0}</strong></span>
                 </div>`;
         } else {
             const stats = sdkIntel.keyStats || {};
             sdkExtractedSection.innerHTML = `
-                <div style="padding:14px;background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.07);border-radius:8px;">
-                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+                <div style="padding:16px;background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.07);border-radius:8px;">
+                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
                         <span style="font-size:20px;">🔍</span>
-                        <div style="font-size:12px;color:#a1a1aa;">No keys found in strings.xml or text files.</div>
+                        <div style="font-size:13px;color:#a1a1aa;">No keys found in strings.xml or text files.</div>
                     </div>
-                    <div style="font-size:11px;color:#71717a;">This APK stores keys in native code or fetches them remotely.</div>
-                    <div style="font-size:11px;color:#71717a;margin-top:4px;">Use jadx/apktool for deeper static analysis.</div>
+                    <div style="font-size:12px;color:#71717a;">This APK stores keys in native code or fetches them remotely.</div>
+                    <div style="font-size:12px;color:#71717a;margin-top:5px;">Use jadx/apktool for deeper static analysis.</div>
                 </div>
-                <div style="display:flex;gap:20px;flex-wrap:wrap;margin-top:10px;">
-                    <span style="font-size:11px;color:#71717a;">Patterns checked: <strong style="color:#a1a1aa;">${stats.keyPatternsChecked || 0}+</strong></span>
-                    <span style="font-size:11px;color:#71717a;">Danger keys: <strong style="color:#4ade80;">0</strong></span>
+                <div style="display:flex;gap:20px;flex-wrap:wrap;margin-top:12px;">
+                    <span style="font-size:12px;color:#a1a1aa;">Patterns checked: <strong style="color:#d4d4d8;">${stats.keyPatternsChecked || 0}+</strong></span>
+                    <span style="font-size:12px;color:#a1a1aa;">Danger keys: <strong style="color:#4ade80;">0</strong></span>
                 </div>`;
         }
     }
@@ -1188,9 +1518,9 @@ function renderRuntimeTab(runtime) {
                     const label = ev.detail
                         ? `${String(ev.name || '').replace(/_/g, ' ')} · ${escapeHtml(String(ev.detail))}`
                         : String(ev.name || 'event').replace(/_/g, ' ');
-                    return `<div style="display:flex;align-items:center;gap:10px;padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.03);">
-                        <span style="font-size:10px;color:#52525b;min-width:40px;font-family:'JetBrains Mono',monospace;flex-shrink:0;">${ev.time}s</span>
-                        <span style="font-size:9px;font-weight:700;text-transform:uppercase;background:${bg};color:${color};padding:1px 6px;border-radius:3px;letter-spacing:0.05em;flex-shrink:0;">${cat}</span>
+                    return `<div style="display:flex;align-items:center;gap:10px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.03);">
+                        <span style="font-size:11px;color:#71717a;min-width:40px;font-family:'JetBrains Mono',monospace;flex-shrink:0;">${ev.time}s</span>
+                        <span style="font-size:11px;font-weight:700;text-transform:uppercase;background:${bg};color:${color};padding:2px 7px;border-radius:3px;letter-spacing:0.05em;flex-shrink:0;">${cat}</span>
                         <span style="font-size:12px;color:#d4d4d8;font-family:'JetBrains Mono',monospace;">${escapeHtml(label)}</span>
                     </div>`;
                 }).join('');
@@ -1200,7 +1530,7 @@ function renderRuntimeTab(runtime) {
     }
 
     // Audit Stats
-    if (runtimePeakMem) runtimePeakMem.textContent = `${runtime.peakMemory || 0} MB`;
+
 
     // Network Intelligence
     if (runtime.networkIntel) {
@@ -1223,6 +1553,126 @@ function renderRuntimeTab(runtime) {
     } else {
         runtimePermissions.innerHTML = '<span style="color: #71717a; font-size: 13px;">No runtime permissions granted.</span>';
     }
+}
+
+// ─── EVENTS TAB ──────────────────────────────────────────────────────────────
+
+const EV_COLOR = {
+    GA:        '#a78bfa',
+    FIREBASE:  '#38bdf8',
+    FACEBOOK:  '#818cf8',
+    IAP:       '#34d399',
+    APPSFLYER: '#fb923c',
+    ADJUST:    '#f59e0b',
+    ADS:       '#2dd4bf',
+    LIFECYCLE: '#71717a',
+    SYSTEM:    '#52525b',
+    CUSTOM:    '#c084fc'
+};
+const EV_BG = {
+    GA:        'rgba(167,139,250,0.12)',
+    FIREBASE:  'rgba(56,189,248,0.12)',
+    FACEBOOK:  'rgba(129,140,248,0.12)',
+    IAP:       'rgba(52,211,153,0.12)',
+    APPSFLYER: 'rgba(251,146,60,0.12)',
+    ADJUST:    'rgba(245,158,11,0.12)',
+    ADS:       'rgba(45,212,191,0.12)',
+    LIFECYCLE: 'rgba(113,113,122,0.12)',
+    SYSTEM:    'rgba(82,82,91,0.12)',
+    CUSTOM:    'rgba(192,132,252,0.12)'
+};
+
+function setEventFilter(cat) {
+    _eventsFilter = cat;
+    document.querySelectorAll('.ev-filter-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.cat === cat);
+    });
+    renderEventsTab(currentSession.runtime);
+}
+
+function renderEventsTab(runtime) {
+    const emptyState  = document.getElementById('events-empty-state');
+    const content     = document.getElementById('events-content');
+    const liveBadge   = document.getElementById('events-live-badge');
+    const feed        = document.getElementById('events-feed');
+    const statTotal   = document.getElementById('ev-stat-total');
+    const statGA      = document.getElementById('ev-stat-ga');
+    const statFB      = document.getElementById('ev-stat-firebase');
+    const statIAP     = document.getElementById('ev-stat-iap');
+    const statAttr    = document.getElementById('ev-stat-attr');
+    const statAI      = document.getElementById('ev-stat-ai');
+
+    const hasData = runtime && runtime.hasRuntimeData;
+    if (!runtime) {
+        if (emptyState) emptyState.classList.remove('hidden');
+        if (content)    content.classList.add('hidden');
+        return;
+    }
+    if (emptyState) emptyState.classList.add('hidden');
+    if (content)    content.classList.remove('hidden');
+
+    if (liveBadge) liveBadge.style.display = sessionState === 'running' ? '' : 'none';
+
+    const allEvents = runtime.events || [];
+
+    // Stats
+    const gaCount   = allEvents.filter(e => e.category === 'GA').length;
+    const fbCount   = allEvents.filter(e => e.category === 'FIREBASE').length;
+    const iapCount  = allEvents.filter(e => e.category === 'IAP').length;
+    const attrCount = allEvents.filter(e => e.category === 'APPSFLYER' || e.category === 'ADJUST' || e.category === 'FACEBOOK').length;
+    const aiCount   = allEvents.filter(e => e.confidence === 'AI').length;
+    if (statTotal)  statTotal.textContent  = allEvents.length;
+    if (statGA)     statGA.textContent     = gaCount;
+    if (statFB)     statFB.textContent     = fbCount;
+    if (statIAP)    statIAP.textContent    = iapCount;
+    if (statAttr)   statAttr.textContent   = attrCount;
+    if (statAI)     statAI.textContent     = aiCount;
+
+    if (!feed) return;
+
+    // Filter — NETWORK = source:network, others = category match
+    const visible = _eventsFilter === 'ALL'
+        ? allEvents
+        : _eventsFilter === 'NETWORK'
+            ? allEvents.filter(e => e.source === 'network' || e.confidence === 'NETWORK')
+            : allEvents.filter(e => e.category === _eventsFilter);
+
+    if (!visible.length) {
+        feed.innerHTML = `<div style="padding: 32px; text-align: center; font-size: 12px; color: #52525b; font-family: 'JetBrains Mono', monospace;">${hasData ? 'No events in this category yet.' : 'Waiting for runtime events…'}</div>`;
+        return;
+    }
+
+    feed.innerHTML = visible.map((ev, idx) => {
+        const cat      = ev.category || 'SYSTEM';
+        const color    = EV_COLOR[cat] || '#a1a1aa';
+        const bg       = EV_BG[cat]   || 'rgba(255,255,255,0.04)';
+        const isAI     = ev.confidence === 'AI';
+        const isNet    = ev.source === 'network' || ev.confidence === 'NETWORK';
+        const evName   = String(ev.name || 'event').replace(/_/g, ' ');
+        const aiBadge  = isAI  ? `<span class="ev-ai-badge">🤖 AI</span>`  : '';
+        const netBadge = isNet ? `<span class="ev-net-badge">🌐 NET</span>` : '';
+        const rowClass = isNet ? 'ev-row ev-row-net' : isAI ? 'ev-row ev-row-ai' : 'ev-row';
+        const rawId    = `ev-raw-${idx}`;
+        const rawText  = ev.raw
+            ? escapeHtml(ev.raw)
+            : isAI  ? escapeHtml(`AI classified: ${ev.detail || ''}`)
+            : isNet ? escapeHtml(`Network → ${ev.detail || ''}`)
+            : escapeHtml(ev.detail || '');
+        return `<div class="${rowClass}" onclick="toggleEvRaw('${rawId}')" style="cursor:pointer;">
+            <span class="ev-time-col">${ev.time}s</span>
+            <span class="ev-cat-col" style="background:${bg};color:${color};">${escapeHtml(cat)}</span>
+            <span class="ev-name-col">${escapeHtml(evName)}${aiBadge}${netBadge}</span>
+            <span class="ev-detail-col">${escapeHtml(String(ev.detail || ''))}</span>
+        </div>
+        <div id="${rawId}" class="ev-raw-row" style="display:none;"><pre class="ev-raw-pre">${rawText}</pre></div>`;
+    }).join('');
+    feed.scrollTop = feed.scrollHeight;
+}
+
+function toggleEvRaw(id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.style.display = el.style.display === 'none' ? 'block' : 'none';
 }
 
 function renderReport(report, container) {
@@ -1443,7 +1893,7 @@ function renderReferenceRows(entries) {
     const tbody = document.getElementById('sdk-ref-table-body');
     if (!tbody) return;
     if (!entries.length) {
-        tbody.innerHTML = '<div style="padding:20px;text-align:center;font-size:12px;color:#52525b;">No matching entries</div>';
+        tbody.innerHTML = '<div style="padding:20px;text-align:center;font-size:13px;color:#71717a;">No matching entries</div>';
         return;
     }
     const categoryOrder = ['ADS', 'ANALYTICS', 'ATTRIBUTION', 'BACKEND', 'IAP', 'MONITORING'];
@@ -1459,21 +1909,21 @@ function renderReferenceRows(entries) {
         if (!catEntries || !catEntries.length) continue;
         const c = CATEGORY_STYLE_REF[cat] || CATEGORY_STYLE_REF.ADS;
         // Category section header
-        html += `<div style="display:flex;align-items:center;gap:12px;padding:7px 16px;background:${c.bg};border-left:3px solid ${c.color};border-bottom:1px solid rgba(255,255,255,0.04);">
-            <span style="font-size:9px;font-weight:800;text-transform:uppercase;color:${c.color};letter-spacing:0.1em;">${cat}</span>
-            <span style="font-size:9px;color:#52525b;">${catEntries.length} key${catEntries.length !== 1 ? 's' : ''}</span>
+        html += `<div style="display:flex;align-items:center;gap:12px;padding:8px 16px;background:${c.bg};border-left:3px solid ${c.color};border-bottom:1px solid rgba(255,255,255,0.04);">
+            <span style="font-size:11px;font-weight:800;text-transform:uppercase;color:${c.color};letter-spacing:0.1em;">${cat}</span>
+            <span style="font-size:11px;color:#71717a;">${catEntries.length} key${catEntries.length !== 1 ? 's' : ''}</span>
         </div>`;
         // Entries for this category
         catEntries.forEach((entry, i) => {
             const rowBg = i % 2 === 0 ? 'rgba(255,255,255,0.013)' : 'transparent';
             const keyTags = entry.stringKeyNames.map(k =>
-                `<code style="font-size:10px;color:${c.color};background:${c.bg};border:1px solid ${c.border};padding:1px 6px;border-radius:3px;white-space:nowrap;opacity:0.88;">${k}</code>`
+                `<code style="font-size:11px;color:${c.color};background:${c.bg};border:1px solid ${c.border};padding:2px 7px;border-radius:3px;white-space:nowrap;opacity:0.88;">${k}</code>`
             ).join(' ');
-            html += `<div style="display:grid;grid-template-columns:150px 120px 1fr 175px;gap:0;padding:8px 16px 8px 20px;background:${rowBg};border-left:3px solid transparent;border-bottom:1px solid rgba(255,255,255,0.03);">
-                <div style="font-size:12px;font-weight:600;color:#e4e4e7;align-self:center;">${entry.sdk}</div>
-                <div style="font-size:11px;color:#a1a1aa;align-self:center;">${entry.keyLabel}</div>
+            html += `<div style="display:grid;grid-template-columns:150px 120px 1fr 175px;gap:0;padding:10px 16px 10px 20px;background:${rowBg};border-left:3px solid transparent;border-bottom:1px solid rgba(255,255,255,0.03);">
+                <div style="font-size:13px;font-weight:600;color:#e4e4e7;align-self:center;">${entry.sdk}</div>
+                <div style="font-size:12px;color:#a1a1aa;align-self:center;">${entry.keyLabel}</div>
                 <div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;padding-right:8px;">${keyTags}</div>
-                <div style="font-size:10px;color:#71717a;align-self:center;font-family:'JetBrains Mono',monospace;word-break:break-word;line-height:1.5;">${entry.expectedFormat}</div>
+                <div style="font-size:11px;color:#a1a1aa;align-self:center;font-family:'JetBrains Mono',monospace;word-break:break-word;line-height:1.5;">${entry.expectedFormat}</div>
             </div>`;
         });
     }

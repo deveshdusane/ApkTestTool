@@ -4,10 +4,18 @@ const fs = require('fs');
 const QAAgent = require('../agent/main');
 const projectManager = require('../agent/manager/projectManager');
 const adbHelper = require('../agent/adb/adbHelper');
+const settingsManager = require('../agent/config/settingsManager');
+const aiEventClassifier = require('../agent/advanced/aiEventClassifier');
+const proxyServer = require('../agent/proxy/proxyServer');
+const certManager = require('../agent/proxy/certManager');
 
 const agent = new QAAgent();
 let mainWindow;
 let lastSessionInfo = { sessionId: null, duration: 0 };
+
+// Load saved API key on startup
+const savedApiKey = settingsManager.get('geminiApiKey', '');
+if (savedApiKey) aiEventClassifier.setApiKey(savedApiKey);
 
 function createWindow() {
     mainWindow = new BrowserWindow({
@@ -158,4 +166,52 @@ ipcMain.handle('analyze-apk', async (event, apkPath) => {
 
 ipcMain.handle('get-predictions', async () => {
     return agent.getPerformancePredictions();
+});
+
+// ─── SETTINGS IPC HANDLERS ────────────────────────────────────────────────────
+
+ipcMain.handle('get-settings', async () => {
+    return {
+        geminiApiKey: settingsManager.get('geminiApiKey', '')
+    };
+});
+
+ipcMain.handle('save-settings', async (event, settings) => {
+    try {
+        if (settings.geminiApiKey !== undefined) {
+            settingsManager.set('geminiApiKey', settings.geminiApiKey);
+            aiEventClassifier.setApiKey(settings.geminiApiKey);
+        }
+        return { success: true };
+    } catch (e) {
+        return { success: false, message: e.message };
+    }
+});
+
+// ─── PROXY / PHASE 3 IPC HANDLERS ────────────────────────────────────────────
+
+ipcMain.handle('get-proxy-status', async () => {
+    return {
+        active:      proxyServer.isActive(),
+        port:        proxyServer.getPort(),
+        intercepted: proxyServer.getIntercepted(),
+        certExists:  certManager.caCertExists(),
+        lastError:   proxyServer.getLastError()
+    };
+});
+
+ipcMain.handle('install-ca-cert', async () => {
+    try {
+        // Resolve connected device automatically
+        const devices = await adbHelper.getConnectedDevices();
+        if (!devices || devices.length === 0) {
+            return { success: false, message: 'No device connected via ADB' };
+        }
+        const did = devices[0].id;
+        await certManager.init();
+        const result = await certManager.pushToDevice(did);
+        return { success: true, result, deviceId: did };
+    } catch (e) {
+        return { success: false, message: e.message };
+    }
 });

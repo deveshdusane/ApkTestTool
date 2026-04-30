@@ -106,30 +106,34 @@ function stopNetworkUsageTracking() {
   }
 }
 
-function startNetworkDropDetection(deviceId) {
+function startNetworkDropDetection(deviceId, packageName) {
   if (!deviceId) return;
-  let lastLogTime = Date.now();
 
   const pollDrops = async () => {
     try {
-      // Only get logs since last check to avoid duplicate counts
-      const stdout = await runADB(["-s", deviceId, "logcat", "-d", "-t", "50", "*:W"]);
+      const stdout = await runADB(["-s", deviceId, "logcat", "-d", "-t", "100", "*:W"]);
       if (!stdout) return;
 
       const output = stdout.toString();
       const dropKeywords = ["Network lost", "NO_NETWORK", "DNS_FAILURE", "SocketTimeoutException"];
-      
-      dropKeywords.forEach(kw => {
-        if (output.includes(kw)) {
-          // Verify it's a new occurrence by checking if it contains recent timestamps (basic check)
-          disconnectCount++;
+
+      // Only count drops that appear in lines referencing our package, or on lines
+      // immediately following a line that references our package (stack traces).
+      const lines = output.split('\n');
+      let prevLineWasOurs = false;
+      for (const line of lines) {
+        const isOurLine = !packageName || line.includes(packageName);
+        if (isOurLine || prevLineWasOurs) {
+          if (dropKeywords.some(kw => line.includes(kw))) {
+            disconnectCount++;
+          }
         }
-      });
-      lastLogTime = Date.now();
+        prevLineWasOurs = isOurLine;
+      }
     } catch (err) {}
   };
 
-  logcatProcess = setInterval(pollDrops, 8000); 
+  logcatProcess = setInterval(pollDrops, 8000);
 }
 
 function stopNetworkDropDetection() {

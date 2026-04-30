@@ -6,13 +6,13 @@ const SDK_DOMAIN_MAP = [
     { sdkId: 'admob',              tlCategory: 'ADS',      patterns: ['doubleclick.net', 'googlesyndication.com', 'googleadservices.com', 'mads.gvt2.com', 'admob.googleapis.com'] },
     { sdkId: 'unity_ads',          tlCategory: 'ADS',      patterns: ['unityads.unity3d.com', 'auction.unityads', 'config.unityads', 'cdn.unityads'] },
     { sdkId: 'applovin',           tlCategory: 'ADS',      patterns: ['applovin.com', 'maxads.com'] },
-    { sdkId: 'facebook',           tlCategory: 'ADS',      patterns: ['an.facebook.com', 'graph.facebook.com', 'fbcdn.net'] },
+    { sdkId: 'facebook',           tlCategory: 'FACEBOOK', patterns: ['an.facebook.com', 'graph.facebook.com', 'fbcdn.net'] },
     { sdkId: 'firebase_analytics', tlCategory: 'FIREBASE', patterns: ['app-measurement.com', 'firebase.googleapis.com', 'firebaseinstallations.googleapis.com', 'firebaseremoteconfig.googleapis.com'] },
     { sdkId: 'firebase',           tlCategory: 'FIREBASE', patterns: ['firebaseio.com', 'firestore.googleapis.com'] },
     { sdkId: 'crashlytics',        tlCategory: 'FIREBASE', patterns: ['crashlytics.com', 'firebasecrashlytics.googleapis.com'] },
-    { sdkId: 'appsflyer',          tlCategory: 'SYSTEM',   patterns: ['appsflyer.com'] },
-    { sdkId: 'branch',             tlCategory: 'SYSTEM',   patterns: ['branch.io', 'app.link', 'bnc.lt'] },
-    { sdkId: 'adjust',             tlCategory: 'SYSTEM',   patterns: ['adjust.com', 'adjust.io'] },
+    { sdkId: 'appsflyer',          tlCategory: 'APPSFLYER', patterns: ['appsflyer.com'] },
+    { sdkId: 'branch',             tlCategory: 'ATTRIBUTION', patterns: ['branch.io', 'app.link', 'bnc.lt'] },
+    { sdkId: 'adjust',             tlCategory: 'ADJUST',   patterns: ['adjust.com', 'adjust.io'] },
     { sdkId: 'sentry',             tlCategory: 'SYSTEM',   patterns: ['sentry.io', 'ingest.sentry.io'] },
 ];
 

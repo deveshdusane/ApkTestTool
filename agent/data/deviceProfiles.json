@@ -1,6 +1,7 @@
 [
   {
     "name": "Samsung Galaxy S24 Ultra",
+    "platform": "android",
     "tier": "flagship",
     "region": "global",
     "ram": 12,
@@ -13,6 +14,7 @@
   },
   {
     "name": "Samsung Galaxy S23",
+    "platform": "android",
     "tier": "flagship",
     "region": "global",
     "ram": 8,
@@ -24,19 +26,8 @@
     "apiLevel": 34
   },
   {
-    "name": "iPhone 15 Pro Max",
-    "tier": "flagship",
-    "region": "global",
-    "ram": 8,
-    "gpu": "Apple GPU (6-core)",
-    "cpuScore": 100,
-    "gpuScore": 100,
-    "resolution": "1290p",
-    "refreshRate": 120,
-    "apiLevel": 34
-  },
-  {
     "name": "Google Pixel 8 Pro",
+    "platform": "android",
     "tier": "flagship",
     "region": "global",
     "ram": 12,
@@ -49,6 +40,7 @@
   },
   {
     "name": "OnePlus 12",
+    "platform": "android",
     "tier": "flagship",
     "region": "global",
     "ram": 16,
@@ -61,6 +53,7 @@
   },
   {
     "name": "Redmi Note 13 Pro",
+    "platform": "android",
     "tier": "mid",
     "region": "global",
     "ram": 8,
@@ -73,6 +66,7 @@
   },
   {
     "name": "Samsung Galaxy A54",
+    "platform": "android",
     "tier": "mid",
     "region": "global",
     "ram": 8,
@@ -85,6 +79,7 @@
   },
   {
     "name": "Redmi Note 12",
+    "platform": "android",
     "tier": "mid",
     "region": "India",
     "ram": 6,
@@ -97,6 +92,7 @@
   },
   {
     "name": "Vivo Y20",
+    "platform": "android",
     "tier": "budget",
     "region": "India",
     "ram": 4,
@@ -109,6 +105,7 @@
   },
   {
     "name": "Realme C53",
+    "platform": "android",
     "tier": "budget",
     "region": "global",
     "ram": 6,
@@ -121,6 +118,7 @@
   },
   {
     "name": "Samsung Galaxy M14",
+    "platform": "android",
     "tier": "budget",
     "region": "India",
     "ram": 4,
@@ -133,6 +131,7 @@
   },
   {
     "name": "Generic Low-end",
+    "platform": "android",
     "tier": "budget",
     "region": "India",
     "ram": 3,
@@ -144,27 +143,107 @@
     "apiLevel": 29
   },
   {
-    "name": "iPhone 13",
+    "name": "iPhone 15 Pro Max",
+    "platform": "ios",
     "tier": "flagship",
     "region": "global",
+    "ram": 8,
+    "gpu": "Apple GPU (6-core A17 Pro)",
+    "cpuScore": 100,
+    "gpuScore": 100,
+    "resolution": "1290p",
+    "refreshRate": 120,
+    "apiLevel": 17
+  },
+  {
+    "name": "iPhone 15",
+    "platform": "ios",
+    "tier": "flagship",
+    "region": "global",
+    "ram": 6,
+    "gpu": "Apple GPU (5-core A16)",
+    "cpuScore": 93,
+    "gpuScore": 91,
+    "resolution": "1179p",
+    "refreshRate": 60,
+    "apiLevel": 17
+  },
+  {
+    "name": "iPhone 14 Pro",
+    "platform": "ios",
+    "tier": "flagship",
+    "region": "global",
+    "ram": 6,
+    "gpu": "Apple GPU (5-core A16)",
+    "cpuScore": 91,
+    "gpuScore": 89,
+    "resolution": "1179p",
+    "refreshRate": 120,
+    "apiLevel": 16
+  },
+  {
+    "name": "iPhone 13",
+    "platform": "ios",
+    "tier": "mid",
+    "region": "global",
     "ram": 4,
-    "gpu": "Apple GPU (4-core)",
+    "gpu": "Apple GPU (4-core A15)",
     "cpuScore": 85,
     "gpuScore": 82,
     "resolution": "1170p",
     "refreshRate": 60,
-    "apiLevel": 33
+    "apiLevel": 15
   },
   {
-    "name": "iPhone 11",
+    "name": "iPhone 12",
+    "platform": "ios",
     "tier": "mid",
     "region": "global",
     "ram": 4,
-    "gpu": "Apple GPU (4-core)",
+    "gpu": "Apple GPU (4-core A14)",
+    "cpuScore": 77,
+    "gpuScore": 74,
+    "resolution": "1170p",
+    "refreshRate": 60,
+    "apiLevel": 14
+  },
+  {
+    "name": "iPhone 11",
+    "platform": "ios",
+    "tier": "mid",
+    "region": "global",
+    "ram": 4,
+    "gpu": "Apple GPU (4-core A13)",
     "cpuScore": 70,
     "gpuScore": 68,
     "resolution": "828p",
     "refreshRate": 60,
-    "apiLevel": 31
+    "apiLevel": 13
+  },
+  {
+    "name": "iPhone SE (2022)",
+    "platform": "ios",
+    "tier": "budget",
+    "region": "global",
+    "ram": 4,
+    "gpu": "Apple GPU (4-core A15)",
+    "cpuScore": 82,
+    "gpuScore": 78,
+    "resolution": "750p",
+    "refreshRate": 60,
+    "apiLevel": 15
+  },
+  {
+    "name": "iPhone XR",
+    "platform": "ios",
+    "tier": "budget",
+    "region": "global",
+    "ram": 3,
+    "gpu": "Apple GPU (4-core A12)",
+    "cpuScore": 60,
+    "gpuScore": 57,
+    "resolution": "828p",
+    "refreshRate": 60,
+    "apiLevel": 12
   }
 ]

@@ -31,4 +31,12 @@ contextBridge.exposeInMainWorld('api', {
 
     // Cleanup
     deleteProject:    (name)          => ipcRenderer.invoke('delete-project', name),
+
+    // Settings
+    getSettings:      ()              => ipcRenderer.invoke('get-settings'),
+    saveSettings:     (settings)      => ipcRenderer.invoke('save-settings', settings),
+
+    // Proxy (Phase 3)
+    getProxyStatus:   ()              => ipcRenderer.invoke('get-proxy-status'),
+    installCACert:    ()              => ipcRenderer.invoke('install-ca-cert'),
 });

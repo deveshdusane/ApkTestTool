@@ -139,7 +139,7 @@ class QAAgent {
             const sessionDir = path.join(
                 __dirname, '../projects', this.currentProject, 'sessions', this.currentSessionId
             );
-            logcatManager.startLogcat(this.currentSessionId, sessionDir);
+            logcatManager.startLogcat(this.currentSessionId, sessionDir, targetPackage, this.activeDeviceId);
             await videoManager.startRecording();
             screenshotManager.startScreenshotCapture(this.currentSessionId, sessionDir);
             
@@ -177,7 +177,7 @@ class QAAgent {
             networkAnalyzer.reset();
             networkAnalyzer.startPingTracking(deviceId);
             networkAnalyzer.startNetworkUsageTracking(deviceId, targetPackage);
-            networkAnalyzer.startNetworkDropDetection(deviceId);
+            networkAnalyzer.startNetworkDropDetection(deviceId, targetPackage);
 
             // Start Performance Monitoring for the Report
             performanceMonitor.start(targetPackage, 5000);
@@ -379,9 +379,20 @@ class QAAgent {
         const telemetry = monitorEngine.getTelemetry();
         const duration = this.startTime ? Math.floor((Date.now() - this.startTime) / 1000) : 0;
 
-        // Step 11: Keep system honest (min 10s data)
-        if (duration < 10 || !telemetry.fps || telemetry.fps === 0) {
+        // Require at least 10s of session time
+        if (duration < 10) {
             return { error: 'Insufficient runtime data (min 10s required)' };
+        }
+
+        // Prefer stable (outlier-trimmed) FPS over the instantaneous reading so that
+        // a single bad measurement (counter reset, ADB glitch) doesn't skew all predictions.
+        // Falls back through: stableFPS → EMA fps → realtimeMonitor → 30 FPS baseline.
+        const stableFPS = monitorEngine.getStableFPS();
+        const hasMeasuredFPS = (stableFPS && stableFPS > 0) || (telemetry.fps && telemetry.fps > 0);
+        let fps = (stableFPS && stableFPS > 0) ? stableFPS : (telemetry.fps && telemetry.fps > 0) ? telemetry.fps : null;
+        if (!fps) {
+            const rtLastFPS = realtimeMonitor.getLastFPS();
+            fps = (rtLastFPS && rtLastFPS > 0) ? rtLastFPS : 30;
         }
 
         try {
@@ -389,17 +400,10 @@ class QAAgent {
             const currentProfile = deviceMatcher.findMatch(deviceInfo);
             const allProfiles = deviceMatcher.getAllProfiles();
 
-            const sessionData = {
-                avgFPS: telemetry.fps,
-                avgCPU: telemetry.avgCPU || 0, // Need to make sure this is tracked
-                fpsDrops: telemetry.jank || 0,
-                peakMemory: telemetry.memory || 0
-            };
-
             const predictions = allProfiles.map(targetProfile => {
                 return performanceScaler.predict(
-                    { 
-                        fps: telemetry.fps,
+                    {
+                        fps,
                         memory: telemetry.memory,
                         cpuUsage: telemetry.avgCPU || 0
                     },
@@ -415,7 +419,7 @@ class QAAgent {
             );
 
             const confidence = performanceScaler.calculateConfidence({
-                fpsStable: telemetry.stability > 0.8,
+                fpsStable: hasMeasuredFPS && telemetry.stability > 0.8,
                 deviceMatchedInDB: !!currentProfile,
                 duration: duration
             });
@@ -423,7 +427,7 @@ class QAAgent {
             return {
                 currentDevice: {
                     name: deviceInfo.model,
-                    fps: telemetry.fps,
+                    fps,
                     memory: telemetry.memory,
                     ram: deviceInfo.ram
                 },

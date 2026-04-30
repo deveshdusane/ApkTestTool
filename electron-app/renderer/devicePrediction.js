@@ -7,6 +7,7 @@
     let predictionInterval = null;
     let currentFilterTier = 'all';
     let currentFilterRegion = 'all';
+    let currentFilterPlatform = 'android';
     let lastData = null;
 
     const UI = {
@@ -21,8 +22,31 @@
         currentMem: document.getElementById('pred-current-mem'),
         filterTier: document.getElementById('pred-filter-tier'),
         filterRegion: document.getElementById('pred-filter-region'),
-        filterNotice: document.getElementById('pred-filter-notice')
+        filterNotice: document.getElementById('pred-filter-notice'),
+        tabAndroid: document.getElementById('pred-tab-android'),
+        tabIos: document.getElementById('pred-tab-ios')
     };
+
+    function setPlatform(platform) {
+        currentFilterPlatform = platform;
+        const isAndroid = platform === 'android';
+
+        if (UI.tabAndroid) {
+            UI.tabAndroid.style.background = isAndroid ? '#38bdf8' : 'transparent';
+            UI.tabAndroid.style.color = isAndroid ? '#0f172a' : '#71717a';
+        }
+        if (UI.tabIos) {
+            UI.tabIos.style.background = !isAndroid ? '#a78bfa' : 'transparent';
+            UI.tabIos.style.color = !isAndroid ? '#0f172a' : '#71717a';
+        }
+
+        // Hide region filter for iOS (all iOS devices are global)
+        if (UI.filterRegion) {
+            UI.filterRegion.style.display = isAndroid ? '' : 'none';
+        }
+
+        if (lastData) render(lastData);
+    }
 
     function init() {
         if (UI.filterTier) {
@@ -37,6 +61,8 @@
                 if (lastData) render(lastData);
             });
         }
+        // Set initial tab state
+        setPlatform('android');
     }
 
     async function updatePredictions() {
@@ -66,29 +92,35 @@
         }
     }
 
-    function getFilteredDevices(allDevices, selectedTier, selectedRegion) {
+    function getFilteredDevices(allDevices, selectedPlatform, selectedTier, selectedRegion) {
+        // Platform is always strict — Android tab shows only Android, iOS tab shows only iOS
+        const platformFiltered = allDevices.filter(device => {
+            const p = (device.platform || 'android').toLowerCase();
+            return p === selectedPlatform;
+        });
+
         let filtered = [];
         let mode = 'strict';
 
-        // Step 1: Try strict match
-        filtered = allDevices.filter(device => {
-            const tierMatch = selectedTier === "all" || selectedTier === "All" || device.tier === selectedTier;
-            const regionMatch = selectedRegion === "all" || selectedRegion === "All" || device.region === selectedRegion;
+        // Try strict tier + region match
+        filtered = platformFiltered.filter(device => {
+            const tierMatch = selectedTier === 'all' || device.tier === selectedTier;
+            const regionMatch = selectedPlatform === 'ios' || selectedRegion === 'all' || device.region === selectedRegion;
             return tierMatch && regionMatch;
         });
 
-        // Step 2: If too few results, relax region filter
-        if (filtered.length < 5) {
+        // Relax region if too few results
+        if (filtered.length < 3) {
             mode = 'relaxed-region';
-            filtered = allDevices.filter(device => {
-                return selectedTier === "all" || selectedTier === "All" || device.tier === selectedTier;
-            });
+            filtered = platformFiltered.filter(device =>
+                selectedTier === 'all' || device.tier === selectedTier
+            );
         }
 
-        // Step 3: If still too few, fallback to all devices
-        if (filtered.length < 5) {
+        // Fall back to all platform devices
+        if (filtered.length < 3) {
             mode = 'fallback-all';
-            filtered = allDevices;
+            filtered = platformFiltered;
         }
 
         return { devices: filtered, isExpanded: mode !== 'strict' };
@@ -104,7 +136,7 @@
     }
 
     function render(data) {
-        const { currentDevice, predictions, bottleneck, confidence, duration } = data;
+        const { currentDevice, predictions, bottleneck, confidence } = data;
 
         // Update Header
         if (UI.currentDeviceName) UI.currentDeviceName.textContent = currentDevice.name;
@@ -116,50 +148,50 @@
             UI.confidenceBadge.style.color = confidence > 80 ? '#2dd4bf' : '#fbbf24';
         }
 
-        // Smart Filtering
-        const { devices, isExpanded } = getFilteredDevices(predictions, currentFilterTier, currentFilterRegion);
+        // Smart Filtering — platform is always strict, tier/region are relaxable
+        const { devices, isExpanded } = getFilteredDevices(predictions, currentFilterPlatform, currentFilterTier, currentFilterRegion);
         const sorted = sortByRegionPriority(devices, currentFilterRegion);
 
-        // Show/Hide filter notice
         if (UI.filterNotice) {
-            if (isExpanded) {
-                UI.filterNotice.classList.remove('hidden');
-            } else {
-                UI.filterNotice.classList.add('hidden');
-            }
+            if (isExpanded) UI.filterNotice.classList.remove('hidden');
+            else UI.filterNotice.classList.add('hidden');
         }
 
-        const filtered = sorted;
+        const isIos = currentFilterPlatform === 'ios';
 
         // Render Table
         if (UI.tableBody) {
-            UI.tableBody.innerHTML = filtered.length > 0 
-                ? filtered.map(p => {
-                    const verdictClass = p.verdict === 'SMOOTH' ? 'pass' : (p.verdict === 'PLAYABLE' ? 'warning' : 'fail');
+            UI.tableBody.innerHTML = sorted.length > 0
+                ? sorted.map(p => {
                     const verdictColor = p.verdict === 'SMOOTH' ? '#2dd4bf' : (p.verdict === 'PLAYABLE' ? '#fbbf24' : '#fca5a5');
-                    
+                    const platformIcon = isIos ? '' : '🤖';
+                    const tierBadgeColor = p.tier === 'flagship' ? '#38bdf8' : (p.tier === 'mid' ? '#a78bfa' : '#71717a');
                     return `
                         <tr>
                             <td style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05);">
-                                <div style="font-weight: 600; color: #fff;">${p.deviceName}</div>
-                                <div style="font-size: 10px; color: #71717a;">${p.tier.toUpperCase()} • ${p.region}</div>
+                                <div style="font-weight: 600; color: #fff;">${platformIcon} ${p.deviceName}</div>
+                                <div style="font-size: 10px; margin-top: 3px;">
+                                    <span style="color: ${tierBadgeColor}; font-weight: 600;">${p.tier.toUpperCase()}</span>
+                                    <span style="color: #52525b;"> • ${isIos ? 'Global' : p.region}</span>
+                                </div>
                             </td>
                             <td style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); color: #a1a1aa; font-size: 12px;">
-                                ${p.ram}GB RAM / ${p.gpu}
+                                <div>${p.gpu}</div>
+                                <div style="font-size: 10px; color: #71717a; margin-top: 2px;">${p.ram}GB RAM</div>
                             </td>
-                            <td style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); font-weight: bold; color: ${verdictColor};">
+                            <td style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); font-weight: bold; color: ${verdictColor}; font-family: 'JetBrains Mono', monospace;">
                                 ${p.predictedFPS} FPS
                             </td>
-                            <td style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); color: #71717a; font-size: 12px;">
+                            <td style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); color: #71717a; font-size: 12px; font-family: 'JetBrains Mono', monospace;">
                                 ${p.frameTime} ms
                             </td>
                             <td style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05);">
-                                <span class="metric" style="background: ${verdictColor}15; color: ${verdictColor}; font-size: 10px;">${p.verdict}</span>
+                                <span class="metric" style="background: ${verdictColor}18; color: ${verdictColor}; font-size: 10px; font-weight: 600;">${p.verdict}</span>
                             </td>
                         </tr>
                     `;
                 }).join('')
-                : `<tr><td colspan="5" style="text-align: center; padding: 20px; color: #71717a;">No devices match filters.</td></tr>`;
+                : `<tr><td colspan="5" style="text-align: center; padding: 24px; color: #52525b; font-size: 13px;">No ${isIos ? 'iOS' : 'Android'} devices match the selected filters.</td></tr>`;
         }
 
         // Render Insights
@@ -218,6 +250,7 @@
 
     window.DevicePrediction = {
         start,
-        stop
+        stop,
+        setPlatform
     };
 })();

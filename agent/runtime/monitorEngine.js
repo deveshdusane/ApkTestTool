@@ -13,15 +13,26 @@ let isLightRunning = false;
 let uiCallback = null;
 let failCount = 0;
 
-// Step 3: Store last values for smooth UI refresh
-let lastFPS = 60;
+// Store last measured values — null means "not yet measured"
+let lastFPS = null;
 let lastPing = 0;
 let _lastTotalFrames = -1;
 let _lastJankyFrames = -1;
+let _lastFPSCallTime = null;       // timestamp of last gfxinfo read, for time-delta FPS
+let _lastFrameTimestamp = null;   // latest intendedVsync seen, to detect stale framestats
+
+// EMA smoothing — prevents single noisy readings from dominating the display
+let _emaFPS = null;
+
+// Rolling history for stable FPS used by device prediction (trims outliers)
+const _fpsHistory = [];
+const FPS_HISTORY_SIZE = 8; // ~24 s at 3 s intervals
 
 const telemetry = {
-    fps: 60,
+    fps: null,
     jank: 0,
+    jankPct: 0,
+    frameTime: null,
     stability: 1.0,
     memory: 0,
     avgCPU: 0,
@@ -57,12 +68,6 @@ async function ensureDevice() {
     return currentDeviceId;
 }
 
-/**
- * Step 4: Smoothing function for fluid UI experience
- */
-function smoothValue(oldVal, newVal) {
-    return Math.round(oldVal * 0.7 + newVal * 0.3);
-}
 
 /**
  * Step 2: UI Refresh Loop (Fast updates without ADB strain)
@@ -162,12 +167,26 @@ async function heavyLoop() {
 
     try {
         const fpsData = await getFPSData();
-        
-        // Step 4: Apply smoothing to FPS
-        lastFPS = smoothValue(lastFPS, fpsData.fps);
+
+        // Apply EMA smoothing (α=0.4) so a single noisy reading can't dominate.
+        // A game running at 60 FPS that briefly reports 2 will recover in 2-3 cycles
+        // rather than flashing an alarming low value in the UI.
+        if (fpsData.fps !== null && fpsData.fps > 0) {
+            _emaFPS = _emaFPS === null
+                ? fpsData.fps
+                : Math.round(_emaFPS * 0.6 + fpsData.fps * 0.4);
+            lastFPS = _emaFPS;
+
+            _fpsHistory.push(_emaFPS);
+            if (_fpsHistory.length > FPS_HISTORY_SIZE) _fpsHistory.shift();
+        }
+
         telemetry.fps = lastFPS;
-        
         telemetry.jank = fpsData.jank;
+        telemetry.jankPct = fpsData.jankPct || 0;
+        telemetry.frameTime = (lastFPS != null && lastFPS > 0)
+            ? parseFloat((1000 / lastFPS).toFixed(1))
+            : null;
         telemetry.stability = fpsData.stability;
     } catch (e) {
         console.error('[MonitorEngine] Heavy loop error:', e.message);
@@ -177,65 +196,131 @@ async function heavyLoop() {
 }
 
 /**
- * Step 5: Improved FPS Calculation Logic
+ * FPS via three methods in priority order:
+ * 1. gfxinfo framestats  — per-frame timestamps (View / hardware-canvas apps)
+ * 2. gfxinfo cumulative  — frame count ÷ elapsed time (broader app support)
+ * 3. SurfaceFlinger      — compositor-reported FPS (Unity/Unreal/native, Android 10+)
  */
 async function getFPSData() {
-    if (!currentDeviceId || !currentPackage) return { fps: 60, jank: 0, stability: 1.0 };
+    if (!currentDeviceId || !currentPackage) return { fps: lastFPS, jank: 0, jankPct: 0, stability: 1.0 };
 
+    // ── Method 1: framestats (View-based / hardware-canvas apps) ─────────────
     try {
-        const output = await adbHelper.runADB([
-            "-s", currentDeviceId,
-            'shell',
-            'dumpsys',
-            'gfxinfo',
-            currentPackage
-        ], { timeout: 8000 });
+        const out = await adbHelper.runADB([
+            '-s', currentDeviceId, 'shell', 'dumpsys', 'gfxinfo', currentPackage, 'framestats'
+        ], { timeout: 4000 });
 
-        let total = 0;
-        let jank = 0;
+        const frames = [];
+        let jankCount = 0;
+        let inProfile = false;
 
-        output.split('\n').forEach(line => {
+        for (const raw of out.split('\n')) {
+            const line = raw.trim();
+            if (line === '---PROFILEDATA---') { inProfile = !inProfile; continue; }
+            if (!inProfile || !line || line.startsWith('Flags')) continue;
+            const parts = line.split(',');
+            if (parts.length < 14) continue;
+            const flags = parseInt(parts[0]);
+            if (flags > 1 || isNaN(flags)) continue;
+            const intendedVsync = parseInt(parts[1]);
+            const frameCompleted = parseInt(parts[13]);
+            if (!intendedVsync || intendedVsync <= 0) continue;
+            frames.push({ intendedVsync, frameCompleted });
+            if (frameCompleted - intendedVsync > 16_666_666) jankCount++;
+        }
+
+        if (frames.length >= 20) {
+            frames.sort((a, b) => a.intendedVsync - b.intendedVsync);
+            const latestTs = frames[frames.length - 1].intendedVsync;
+            const spanS = (latestTs - frames[0].intendedVsync) / 1_000_000_000;
+
+            // Only reject if truly stale — no new frames since last poll.
+            // Removed the spanS > 5s check: it was incorrectly rejecting valid
+            // data for games running below ~26 FPS (128 frames / 5s = 25.6 FPS).
+            const isStale = _lastFrameTimestamp !== null && latestTs === _lastFrameTimestamp;
+
+            if (!isStale && spanS > 0.1) {
+                _lastFrameTimestamp = latestTs;
+                const fps = Math.min(120, Math.max(1, Math.round((frames.length - 1) / spanS)));
+                const jankPct = Math.round((jankCount / frames.length) * 100);
+                lastFPS = fps;
+                return { fps, jank: jankCount, jankPct, stability: parseFloat((1 - jankCount / frames.length).toFixed(2)) };
+            }
+            _lastFrameTimestamp = latestTs;
+        }
+    } catch (e) { /* fall through */ }
+
+    // ── Method 2: gfxinfo cumulative — actual frame count over elapsed time ──
+    try {
+        const out = await adbHelper.runADB([
+            '-s', currentDeviceId, 'shell', 'dumpsys', 'gfxinfo', currentPackage
+        ], { timeout: 4000 });
+
+        let total = 0, jank = 0;
+        for (const line of out.split('\n')) {
             if (line.includes('Total frames rendered')) {
-                const match = line.match(/:\s*(\d+)/);
-                if (match) total = parseInt(match[1]);
+                const m = line.match(/:\s*(\d+)/); if (m) total = parseInt(m[1]);
             }
-            if (line.includes('Janky frames')) {
-                const match = line.match(/:\s*(\d+)/);
-                if (match) jank = parseInt(match[1]);
-            }
-        });
-
-        // Step 5: Safer FPS Logic (Delta-based)
-        if (total > 0 && jank >= 0) {
-            // If it's the first reading or the stats reset, just baseline it
-            if (_lastTotalFrames === -1 || total < _lastTotalFrames) {
-                _lastTotalFrames = total;
-                _lastJankyFrames = jank;
-                return { fps: 60, jank: 0, stability: 1.0 };
-            }
-
-            const deltaTotal = total - _lastTotalFrames;
-            const deltaJank = jank - _lastJankyFrames;
-            
-            _lastTotalFrames = total;
-            _lastJankyFrames = jank;
-
-            if (deltaTotal > 0) {
-                const dropRatio = Math.max(0, Math.min(1, deltaJank / deltaTotal));
-                const fps = Math.max(1, Math.round(60 * (1 - dropRatio)));
-
-                return {
-                    fps,
-                    jank: deltaJank,
-                    stability: parseFloat((1 - dropRatio).toFixed(2))
-                };
+            if (line.includes('Janky frames') && !line.includes('%')) {
+                const m = line.match(/:\s*(\d+)/); if (m) jank = parseInt(m[1]);
             }
         }
 
-        return { fps: lastFPS || 60, jank: 0, stability: 1.0 };
-    } catch (err) {
-        return { fps: lastFPS || 60, jank: 0, stability: 1.0 };
-    }
+        if (total > 0) {
+            const now = Date.now();
+            if (_lastTotalFrames === -1 || total < _lastTotalFrames) {
+                _lastTotalFrames = total;
+                _lastJankyFrames = jank;
+                _lastFPSCallTime = now;
+                return { fps: lastFPS, jank: 0, jankPct: 0, stability: 1.0 };
+            }
+            const dTotal = total - _lastTotalFrames;
+            const dJank  = jank  - _lastJankyFrames;
+            const dSec   = _lastFPSCallTime ? (now - _lastFPSCallTime) / 1000 : 3;
+            _lastTotalFrames = total;
+            _lastJankyFrames = jank;
+            _lastFPSCallTime = now;
+
+            if (dTotal > 0 && dSec > 0.5) {
+                const rawFps = dTotal / dSec;
+                // Sanity gate: reject if more than 3× or less than ⅓ of the last
+                // known value — these are counter-reset artefacts, not real readings
+                const plausible = lastFPS === null
+                    || (rawFps >= lastFPS / 3 && rawFps <= lastFPS * 3);
+                if (plausible) {
+                    const fps = Math.min(120, Math.max(1, Math.round(rawFps)));
+                    const dropRatio = Math.max(0, Math.min(1, dJank / dTotal));
+                    const jankPct = Math.round(dropRatio * 100);
+                    lastFPS = fps;
+                    return { fps, jank: dJank, jankPct, stability: parseFloat((1 - dropRatio).toFixed(2)) };
+                }
+            }
+        }
+    } catch (e) { /* fall through */ }
+
+    // ── Method 3: SurfaceFlinger compositor FPS (Unity/Unreal/native games) ──
+    // Handles multiple Android versions: Android 10 (fps=X), 11 (fps = X),
+    // 12+ (fps: X / averageFPS=X). The wider grep catches all known formats.
+    try {
+        const sfOut = await adbHelper.runADB([
+            '-s', currentDeviceId, 'shell',
+            `dumpsys SurfaceFlinger | grep -E -i "${currentPackage}" -A 8 | grep -E -i "fps" | head -5`
+        ], { timeout: 3000 });
+
+        if (sfOut && sfOut.trim()) {
+            // Match fps=X, fps: X, fps = X, averageFPS=X (all common formats)
+            const m = sfOut.match(/(?:average)?fps[: =]+([\d.]+)/i);
+            if (m) {
+                const fps = Math.min(120, Math.max(1, Math.round(parseFloat(m[1]))));
+                if (fps > 1) { // 1 FPS from SurfaceFlinger usually means idle/no data
+                    lastFPS = fps;
+                    return { fps, jank: 0, jankPct: telemetry.jankPct || 0, stability: telemetry.stability || 1.0 };
+                }
+            }
+        }
+    } catch (e) { /* fall through */ }
+
+    return { fps: lastFPS, jank: 0, jankPct: 0, stability: 1.0 };
 }
 
 async function getPingSafe() {
@@ -281,6 +366,9 @@ function broadcastData() {
                 runtime: runtimeIntelligence ? runtimeIntelligence.getResult() : null,
                 ping: telemetry.ping || 0,
                 jank: telemetry.jank,
+                jankPct: telemetry.jankPct,
+                frameTime: telemetry.frameTime,
+                cpuUsage: telemetry.avgCPU,
                 stability: telemetry.stability,
                 trend: telemetry.status === 'OFFLINE' ? "DEGRADING" : calculateTrend()
             }
@@ -323,13 +411,25 @@ async function startMonitoring(pkg, deviceId, onData) {
     mediumLoop();
     heavyLoop();
 
+    // One-shot memory scan: fires 8 s after start, giving SDKs time to init and write keys to heap
+    loops.memoryScan = setTimeout(async () => {
+        try {
+            const runtimeIntelligence = require('../advanced/runtimeIntelligence');
+            if (runtimeIntelligence && pkg && deviceId) {
+                await runtimeIntelligence.runMemoryScan(deviceId, pkg);
+            }
+        } catch (e) {
+            console.warn('[MonitorEngine] Memory scan error:', e.message);
+        }
+    }, 8000);
+
     // Step 2: Setup UI refresh loop (Every 1s)
     loops.refresh = setInterval(uiRefreshLoop, 1000);
 
     // Setup background ADB loops (Throttled)
-    loops.light = setInterval(lightLoop, 5000);   
-    loops.medium = setInterval(mediumLoop, 7000); 
-    loops.heavy = setInterval(heavyLoop, 10000);  
+    loops.light = setInterval(lightLoop, 5000);
+    loops.medium = setInterval(mediumLoop, 6000);
+    loops.heavy = setInterval(heavyLoop, 3000);   // 3s for responsive FPS updates
 }
 
 /**
@@ -337,6 +437,7 @@ async function startMonitoring(pkg, deviceId, onData) {
  */
 function stopMonitoring() {
     console.log('[MonitorEngine] Stopping Monitoring Engine...');
+    if (loops.memoryScan) clearTimeout(loops.memoryScan);
     Object.values(loops).forEach(clearInterval);
     loops = {};
     isHeavyRunning = false;
@@ -344,12 +445,41 @@ function stopMonitoring() {
     isLightRunning = false;
     currentPackage = null;
     currentDeviceId = null;
+    lastFPS = null;
     _lastTotalFrames = -1;
     _lastJankyFrames = -1;
+    _lastFPSCallTime = null;
+    _lastFrameTimestamp = null;
+    _emaFPS = null;
+    _fpsHistory.length = 0;
+    telemetry.fps = null;
+    telemetry.frameTime = null;
+    telemetry.jank = 0;
+    telemetry.jankPct = 0;
+    telemetry.memory = 0;
+    telemetry.avgCPU = 0;
+    telemetry.ping = 0;
+    telemetry.battery = 'Unknown';
+    telemetry.status = 'ONLINE';
+}
+
+/**
+ * Returns a stable FPS value for device prediction by trimming outliers from
+ * the rolling history and computing the trimmed mean.
+ * Falls back to the current EMA value when history is too short.
+ */
+function getStableFPS() {
+    if (_fpsHistory.length < 3) return telemetry.fps;
+    const sorted = [..._fpsHistory].sort((a, b) => a - b);
+    // Trim the bottom and top 12.5% to remove burst/stall artefacts
+    const trim = Math.max(1, Math.floor(sorted.length * 0.125));
+    const trimmed = sorted.slice(trim, sorted.length - trim);
+    return Math.round(trimmed.reduce((a, b) => a + b, 0) / trimmed.length);
 }
 
 module.exports = {
     startMonitoring,
     stopMonitoring,
-    getTelemetry: () => telemetry
+    getTelemetry: () => telemetry,
+    getStableFPS
 };
