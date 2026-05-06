@@ -84,6 +84,16 @@ ipcMain.handle('start-test', async (event, apkPath) => {
                 mainWindow.webContents.send('live-data', data);
             }
         });
+
+        // Start MITM proxy now that we have an active device
+        if (agent.activeDeviceId) {
+            proxyServer.start(agent.activeDeviceId, (eventData) => {
+                if (mainWindow && !mainWindow.isDestroyed()) {
+                    mainWindow.webContents.send('live-data', eventData);
+                }
+            }).catch(e => console.warn('[Proxy] Start failed:', e.message));
+        }
+
         return { success: true, message: `✔ Session started: ${result.sessionId}` };
     } catch (err) {
         return { success: false, message: `❌ Error: ${err.message}` };
@@ -93,6 +103,9 @@ ipcMain.handle('start-test', async (event, apkPath) => {
 ipcMain.handle('stop-test', async () => {
     try {
         const result = await agent.stopSession();
+
+        // Stop MITM proxy and clear device proxy settings
+        proxyServer.stop().catch(e => console.warn('[Proxy] Stop failed:', e.message));
 
         // Auto-generate report on stop
         const { reportData } = await agent.generateReport(result.sessionId, result.duration);
