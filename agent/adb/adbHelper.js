@@ -108,8 +108,10 @@ const getDeviceInfo = async (deviceId = null) => {
 
         const devices = await getConnectedDevices();
         const isConnected = devices.length > 0;
+        const selectedDevice = deviceId || (isConnected ? devices[0].id : null);
 
         return {
+            id: selectedDevice,
             model: model.trim() || 'Unknown Device',
             androidVersion: version.trim() || 'Unknown',
             apiLevel: sdk.trim() || 'N/A',
@@ -120,6 +122,7 @@ const getDeviceInfo = async (deviceId = null) => {
         };
     } catch (err) {
         return { 
+            id: deviceId,
             model: 'Unknown', 
             androidVersion: 'Unknown', 
             apiLevel: 'N/A', 

@@ -89,7 +89,9 @@ const SDK_DEFINITIONS = [
         category: 'ATTRIBUTION',
         classSignatures: ['io/branch', 'io.branch'],
         manifestSignatures: ['io.branch'],
-        logPatterns: [/\bBranch\b/i, /branch init/i],
+        // Require Branch SDK-specific markers — bare word "Branch" causes false positives
+        // (matches BranchManager, BackBranch, /branch/, etc. in unrelated logs)
+        logPatterns: [/io\.branch\.referral/i, /BranchSDK/i, /BNC_LOG/i, /branchio/i, /branch\.io/i],
         keyPatterns: [
             { name: 'Branch Live Key', keyType: 'Live Key', regex: /key_live_[A-Za-z0-9]{20,}/g, stringKeys: ['branch_key_live', 'io.branch.sdk.BranchKey', 'branch_key'] },
             { name: 'Branch Test Key', keyType: 'Test Key', regex: /key_test_[A-Za-z0-9]{20,}/g, stringKeys: ['branch_key_test'] }
@@ -253,6 +255,28 @@ const PLACEHOLDER_PATTERNS = [
     /^(test|sample|example|dummy|placeholder|your[-_]?key|insert[-_]?key)/i
 ];
 
+// Heuristic: detect snake_case-style Android resource names that the .arsc adjacent-pairing
+// scan accidentally extracts as values. These follow a strict pattern: lowercase letters,
+// digits, and underscores only, no dashes/dots/slashes/colons/uppercase.
+// Real keys/IDs almost always include dashes, dots, slashes, colons, or uppercase letters.
+const STRING_RES_NAME_PATTERNS = [
+    /^[a-z][a-z0-9_]*$/,           // pure snake_case (google_api_key, range_end, mtrl_picker_a11y)
+    /^##/,                          // resource name prefixes (##hide_bottom_view...)
+    /^@[a-z]/                       // resource references (@string/foo)
+];
+
+// Real values must contain at least one of these "non-resname" markers
+// (dash, dot, colon, slash, tilde, uppercase letter, or be very long pure-numeric)
+function looksLikeStringResName(value) {
+    if (!value) return true;
+    const v = String(value);
+    // Reject obvious resource-name patterns
+    if (STRING_RES_NAME_PATTERNS.some(re => re.test(v))) return true;
+    // Pure numeric is fine (Sender IDs are numeric like 405480883303), but only if 8+ digits
+    if (/^\d+$/.test(v)) return v.length < 8;
+    return false;
+}
+
 // Google's official AdMob test publisher — any key from this ID must not ship in production
 const ADMOB_TEST_PUBLISHER = 'ca-app-pub-3940256099942544';
 
@@ -276,6 +300,22 @@ function isPlaceholder(value) {
     return PLACEHOLDER_PATTERNS.some(re => re.test(value));
 }
 
+// Format validators for stringKey-only patterns (no regex) — enforce expected shape
+// so we don't mark snake_case garbage as "Valid" just because there's no regex check.
+const KEY_TYPE_VALIDATORS = {
+    'Sender ID':    v => /^\d{6,15}$/.test(v),                                  // pure numeric, 6-15 digits
+    'Project ID':   v => /^[a-z][a-z0-9-]{3,29}$/.test(v) && !/^[a-z][a-z0-9_]*$/.test(v),  // dashed, not pure snake_case
+    'Dev Key':      v => /^[A-Za-z0-9]{15,40}$/.test(v),                        // alphanumeric token
+    'App Token':    v => /^[A-Za-z0-9]{8,40}$/.test(v),
+    'Title ID':     v => /^[A-Z0-9]{4,8}$/.test(v),                             // PlayFab title IDs
+    'License Key':  v => v.length >= 100,                                       // base64 RSA pub key, very long
+    'Game ID':      v => /^\d{5,20}$/.test(v),                                  // UnityAds game IDs
+    'SDK Key':      v => v.length >= 30 && /[A-Z]/.test(v) && /[0-9]/.test(v),
+    'App Key':      v => v.length >= 16 && /[A-Za-z0-9]/.test(v),
+    'App ID':       v => v.length >= 8 && (/^fb\d+$/.test(v) || /^ca-app-pub-/.test(v) || /^\d+:/.test(v) || /^\d{10,}$/.test(v)),
+    'Client Token': v => /^[A-Fa-f0-9]{30,}$/.test(v) || v.length >= 30
+};
+
 // Returns the danger/validity status for a key value
 function classifyKey(keyPattern, value) {
     // AdMob test publisher ID — ships in Google docs/samples, must not reach production
@@ -298,13 +338,27 @@ function classifyKey(keyPattern, value) {
         keyPattern.regex.lastIndex = 0;
         return valid ? 'Valid' : 'Format Issue';
     }
+    // Apply keyType-based validator for stringKey-only patterns
+    const validator = KEY_TYPE_VALIDATORS[keyPattern.keyType];
+    if (validator) {
+        return validator(value) ? 'Valid' : 'Format Issue';
+    }
     return 'Valid';
 }
 
-function addKey(result, sdk, keyPattern, value, source) {
+function addKey(result, sdk, keyPattern, value, source, fromStringKey = false) {
     if (!value || String(value).length < 3) return;
     const valStr = String(value);
     if (isPlaceholder(valStr)) return;
+
+    // Reject Android resource-name strings that get picked up by the adjacent-string
+    // heuristic in resources.arsc — these are key NAMES, not key VALUES.
+    // Only filter when source is the adjacent-string heuristic (resources.arsc / native-lib);
+    // regex-based hits are always valid because their format is verified.
+    if (fromStringKey && (source === 'resources.arsc' || source === 'native-lib')) {
+        if (looksLikeStringResName(valStr)) return;
+    }
+
     // Deduplicate: same value + same key pattern across any SDK
     if (result.keys.some(k => k.value === valStr && k.keyName === keyPattern.name)) return;
     result.keys.push({
@@ -395,13 +449,16 @@ function scanArscStrings(result, buffer, source) {
             }
         }
     }
-    // Adjacent strings heuristic: if strings[i] is a known key name and strings[i+1] looks like a value
+    // Adjacent strings heuristic: if strings[i] is a known key name and strings[i+1] looks like a value.
+    // This is fragile — .arsc string pools are often alphabetically sorted, not name→value pairs.
+    // The fromStringKey=true flag lets addKey reject snake_case resource-name strings that get
+    // accidentally paired (e.g., google_api_key followed by google_app_id).
     for (let i = 0; i < strings.length - 1; i++) {
         const entry = keyIndex.get(strings[i]);
         if (!entry) continue;
         const value = strings[i + 1];
         if (value && value.length >= 3 && value.length < 500) {
-            addKey(result, result.sdks[entry.definition.id], entry.kp, value, source);
+            addKey(result, result.sdks[entry.definition.id], entry.kp, value, source, true);
         }
     }
 }

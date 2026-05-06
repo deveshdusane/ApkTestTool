@@ -15,7 +15,6 @@ let _eventsFilter = 'ALL';
 // Global persistent state for the active project
 let currentSession = {
     runtime: null,
-    report: null,
     staticAnalysis: null
 };
 
@@ -107,6 +106,7 @@ const browseBtn = document.getElementById('browse-btn');
 const startBtn = document.getElementById('start-btn');
 const stopBtn = document.getElementById('stop-btn');
 const reportBtn = document.getElementById('report-btn');
+
 const logsContainer = document.getElementById('status-logs');
 const liveDashboard = document.getElementById('live-dashboard');
 const liveFps = document.getElementById('live-fps');
@@ -116,7 +116,7 @@ const liveFpsCtx = document.getElementById('live-fps-chart');
 const liveIssuesPanel = document.getElementById('live-issues-panel');
 const liveIssuesList = document.getElementById('live-issues-list');
 const clearLogsBtn = document.getElementById('clear-logs-btn');
-const reportContainer = document.getElementById('report-container');
+
 const deviceStatusBar = document.getElementById('device-status-bar');
 const statusDeviceName = document.getElementById('status-device-name');
 const statusAndroidVer = document.getElementById('status-android-version');
@@ -163,10 +163,30 @@ const runtimeNetworkStatus = document.getElementById('runtime-network-status');
 
 const allPermissionsList = document.getElementById('all-permissions-list');
 
-const reportEmptyState = document.getElementById('report-empty-state');
+
 const eventsContent = document.getElementById('events-content');
 const eventsEmptyState = document.getElementById('events-empty-state');
-const navReport = document.getElementById('nav-report');
+
+// IAP Validation references
+const iapStartBtn = document.getElementById('iap-start-btn');
+const iapStopBtn = document.getElementById('iap-stop-btn');
+const iapEmptyState = document.getElementById('iap-empty-state');
+const iapContent = document.getElementById('iap-content');
+const iapSystemName = document.getElementById('iap-system-name');
+const iapStatusBadge = document.getElementById('iap-status-badge');
+const iapTimeline = document.getElementById('iap-timeline');
+const iapTimer = document.getElementById('iap-timer');
+const iapValTime = document.getElementById('iap-val-time');
+const iapValBackend = document.getElementById('iap-val-backend');
+const iapValError = document.getElementById('iap-val-error');
+const iapLibraryVersion = document.getElementById('iap-library-version');
+const iapValErrorMessage = document.getElementById('iap-val-error-message');
+const iapValErrorMessageRow = document.getElementById('iap-val-error-message-row');
+const iapStepInitiate = document.getElementById('iap-step-initiate');
+const iapStepResolve  = document.getElementById('iap-step-resolve');
+const iapStepAck      = document.getElementById('iap-step-acknowledge');
+const iapStepConsume  = document.getElementById('iap-step-consume');
+const iapLcVerdict    = document.getElementById('iap-lc-verdict');
 
 const securityRiskLevel = document.getElementById('security-risk-level');
 const dangerousPermissionsList = document.getElementById('dangerous-permissions-list');
@@ -349,19 +369,17 @@ function switchTab(tabId) {
     if (tabId === 'events') {
         renderEventsTab(currentSession.runtime);
     }
-
-    if (tabId === 'report') {
-        console.log("Report Data State:", currentSession.report);
-        if (currentSession.report) {
-            reportContainer.innerHTML = '';
-            renderReport(currentSession.report, reportContainer);
-            reportContainer.classList.remove('hidden');
-            reportEmptyState.classList.add('hidden');
-        } else {
-            reportContainer.classList.add('hidden');
-            reportEmptyState.classList.remove('hidden');
-        }
+    if (tabId === 'iap') {
+        renderIAPTab();
     }
+    if (tabId === 'blockers') {
+        renderBlockerTab();
+    }
+    if (tabId === 'static') {
+        if (currentSession.staticAnalysis) renderStaticAnalysis(currentSession.staticAnalysis);
+    }
+
+
 
     if (tabId === 'history' && activeProject) loadHistory();
 
@@ -456,7 +474,7 @@ function toggleEmptyState() {
 
 async function handleDeleteProject() {
     if (!activeProject) return;
-    const confirmed = confirm(`Are you sure you want to delete project "${activeProject}"? This will permanently remove all sessions and reports.`);
+    const confirmed = confirm(`Are you sure you want to delete project "${activeProject}"? This will permanently remove all sessions and data.`);
     if (confirmed) {
         const res = await window.api.deleteProject(activeProject);
         if (res.success) {
@@ -475,6 +493,7 @@ async function handleDeleteProject() {
 deleteProjectBtn.addEventListener('click', handleDeleteProject);
 sidebarDeleteBtn.addEventListener('click', handleDeleteProject);
 mainDeleteBtn.addEventListener('click', handleDeleteProject);
+
 
 emptyStateCreateBtn.addEventListener('click', () => {
     newProjectForm.classList.remove('hidden');
@@ -583,6 +602,7 @@ async function setApk(filePath, fileName) {
     try {
         const info = await window.api.analyzeAPK(filePath);
         if (info) {
+            currentSession.staticAnalysis = info;
             renderStaticAnalysis(info);
         } else {
             staticContent.classList.add('hidden');
@@ -602,6 +622,10 @@ function renderStaticAnalysis(info) {
     apkInfoVer.textContent = `${info.versionName || 'N/A'} (Build ${info.versionCode || 'N/A'})`;
     apkInfoMin.textContent = info.minSdk || 'N/A';
     apkInfoTarget.textContent = info.targetSdk || 'N/A';
+
+    // Game Engine
+    const engineEl = document.getElementById('apk-info-engine');
+    if (engineEl) engineEl.textContent = info.sdkInfo?.engine || 'Native / Unknown';
 
     // All Permissions List
     allPermissionsList.innerHTML = '';
@@ -698,7 +722,7 @@ function updateSessionState(newState) {
     if (sessionState === 'idle') {
         startBtn.classList.remove('hidden');
         runningControls.classList.add('hidden');
-        reportBtn.classList.add('hidden');
+        if (reportBtn) reportBtn.classList.add('hidden');
         startBtn.disabled = !selectedApkPath; // Keep disabled if no APK
         stopTimer();
     } else if (sessionState === 'running') {
@@ -706,13 +730,13 @@ function updateSessionState(newState) {
         runningControls.classList.remove('hidden');
         stopBtn.disabled = false;
         stopBtn.textContent = '■ Stop Test';
-        reportBtn.classList.add('hidden');
+        if (reportBtn) reportBtn.classList.add('hidden');
         startTimer();
     } else if (sessionState === 'stopped') {
         startBtn.classList.remove('hidden');
         startBtn.disabled = !selectedApkPath;
         runningControls.classList.add('hidden');
-        reportBtn.classList.add('hidden');
+        if (reportBtn) reportBtn.classList.add('hidden');
         stopTimer();
     }
 }
@@ -739,7 +763,8 @@ startBtn.addEventListener('click', async () => {
     if (!selectedApkPath) return;
     addLog(`🚀 Starting QA session for: ${fileNameDisplay.textContent}`, 'info');
     startBtn.disabled = true;
-    reportContainer.classList.add('hidden');
+    const reportContainer = document.getElementById('report-container');
+    if (reportContainer) reportContainer.classList.add('hidden');
     liveDashboard.classList.remove('hidden');
     liveIssuesPanel.classList.add('hidden');
     liveFps.textContent = '--';
@@ -767,13 +792,22 @@ startBtn.addEventListener('click', async () => {
         statusAndroidVer.textContent = deviceInfo.androidVersion;
         statusBattery.textContent = deviceInfo.battery;
         statusConnected.textContent = deviceInfo.status;
-        statusConnected.style.color = deviceInfo.status === 'Connected' ? '#2dd4bf' : '#f87171';
+        statusConnected.style.color = String(deviceInfo.status).toUpperCase() === 'CONNECTED' ? '#2dd4bf' : '#f87171';
         deviceStatusBar.classList.remove('hidden');
     } catch (err) {
         console.error('Failed to fetch device info', err);
     }
 
-    const res = await window.api.startTest(selectedApkPath);
+    let res;
+    try {
+        res = await window.api.startTest(selectedApkPath);
+    } catch (err) {
+        addLog(`❌ Error: ${err.message}`, 'error');
+        updateSessionState('idle');
+        deviceStatusBar.classList.add('hidden');
+        return;
+    }
+
     if (res.success) {
         addLog(res.message, 'success');
         updateSessionState('running');
@@ -812,14 +846,6 @@ stopBtn.addEventListener('click', async () => {
         addLog(res.message, 'success');
         updateSessionState('stopped');
 
-        if (res.report) {
-            currentSession.report = res.report;
-            if (res.report.advancedInsights?.runtime) {
-                currentSession.runtime = res.report.advancedInsights.runtime;
-            }
-            switchTab('report');
-        }
-
         // Always refresh history so the new session appears immediately
         refreshHistory();
     } else {
@@ -828,29 +854,7 @@ stopBtn.addEventListener('click', async () => {
     }
 });
 
-reportBtn.addEventListener('click', async () => {
-    addLog('ℹ Generating QA report…', 'info');
-    const res = await window.api.generateReport();
-    if (res.success && res.report) {
-        addLog(res.message, 'success');
 
-        // Save to global state
-        currentSession.report = res.report;
-        if (res.report.advancedInsights?.runtime) {
-            currentSession.runtime = res.report.advancedInsights.runtime;
-        }
-
-        console.log("Report Generated. Data Saved:", currentSession);
-        switchTab('report');
-
-        setTimeout(() => {
-            refreshHistory();
-        }, 800);
-        updateSessionState('idle');
-    } else {
-        addLog(res.message || '❌ Report generation failed', 'error');
-    }
-});
 
 clearLogsBtn.addEventListener('click', () => { logsContainer.innerHTML = ''; });
 
@@ -976,8 +980,7 @@ async function loadHistoryItem(sessionId, el) {
     historyDetail.innerHTML = '<p class="empty-state">Loading…</p>';
     const report = await window.api.getSessionReport(activeProject, sessionId);
     if (report) {
-        historyDetail.innerHTML = '';
-        renderReport(report, historyDetail);
+        historyDetail.innerHTML = `<div class="empty-state">Report visualization is currently disabled.</div>`;
     } else {
         historyDetail.innerHTML = '<p class="empty-state">Report not found.</p>';
     }
@@ -1132,9 +1135,7 @@ if (window.api.onLiveData) {
                 // Save to Global State for cross-tab persistence
                 if (data.advanced.runtime) {
                     currentSession.runtime = {
-                        ...data.advanced.runtime,
-                        peakMemory: data.advanced.memory?.peakMemory || 0,
-                        networkIntel: data.advanced.networkIntel
+                        ...data.advanced.runtime
                     };
 
                     // Update UI immediately if tab is active
@@ -1473,6 +1474,16 @@ function renderRuntimeTab(runtime) {
         updateQA('qa-ads-sdk', runtime.checklist.ads_sdk);
         updateQA('qa-appsflyer', runtime.checklist.appsflyer);
         updateQA('qa-safe-permissions', runtime.checklist.safe_permissions);
+        updateQA('qa-no-crashes', runtime.checklist.no_crashes);
+        updateQA('qa-no-anrs', runtime.checklist.no_anrs);
+        updateQA('qa-network-active', runtime.checklist.network_active);
+        updateQA('qa-crashlytics-init', runtime.checklist.crashlytics_init);
+        updateQA('qa-target-sdk-compliant', runtime.checklist.target_sdk_compliant);
+
+        const tsdEl = document.getElementById('qa-target-sdk-detail');
+        if (tsdEl) {
+            tsdEl.textContent = runtime.targetSdk ? `(target=${runtime.targetSdk})` : '';
+        }
     }
 
     // Event Timeline (Live)
@@ -1509,8 +1520,8 @@ function renderRuntimeTab(runtime) {
             if (!visibleEvents.length) {
                 timelineContainer.innerHTML = '<span style="color:#3f3f46;font-size:11px;font-family:\'JetBrains Mono\',monospace;">Waiting for runtime activity...</span>';
             } else {
-                const CAT_COLOR = { SYSTEM: '#71717a', FIREBASE: '#38bdf8', ADS: '#2dd4bf' };
-                const CAT_BG    = { SYSTEM: 'rgba(113,113,122,0.1)', FIREBASE: 'rgba(56,189,248,0.1)', ADS: 'rgba(45,212,191,0.1)' };
+                const CAT_COLOR = { GA: '#a78bfa', FIREBASE: '#38bdf8', FACEBOOK: '#818cf8', IAP: '#34d399', APPSFLYER: '#fb923c', ADJUST: '#f59e0b', ADS: '#2dd4bf', LIFECYCLE: '#71717a', SYSTEM: '#52525b' };
+                const CAT_BG    = { GA: 'rgba(167,139,250,0.1)', FIREBASE: 'rgba(56,189,248,0.1)', FACEBOOK: 'rgba(129,140,248,0.1)', IAP: 'rgba(52,211,153,0.1)', APPSFLYER: 'rgba(251,146,60,0.1)', ADJUST: 'rgba(245,158,11,0.1)', ADS: 'rgba(45,212,191,0.1)', LIFECYCLE: 'rgba(113,113,122,0.1)', SYSTEM: 'rgba(82,82,91,0.1)' };
                 timelineContainer.innerHTML = visibleEvents.map(ev => {
                     const cat   = ev.category || (ev.name?.includes('ad_') ? 'ADS' : ev.name?.includes('firebase') ? 'FIREBASE' : 'SYSTEM');
                     const color = CAT_COLOR[cat] || '#a1a1aa';
@@ -1532,17 +1543,7 @@ function renderRuntimeTab(runtime) {
     // Audit Stats
 
 
-    // Network Intelligence
-    if (runtime.networkIntel) {
-        if (runtimeAvgPing) runtimeAvgPing.textContent = `${runtime.networkIntel.ping || 0} ms`;
-        if (runtimeDataUsed) runtimeDataUsed.textContent = `${runtime.networkIntel.dataUsedMB || 0} MB`;
-        if (runtimeDisconnects) runtimeDisconnects.textContent = runtime.networkIntel.disconnects || 0;
-        if (runtimeNetworkStatus) {
-            const status = runtime.networkIntel.status || 'OFFLINE';
-            runtimeNetworkStatus.textContent = status;
-            runtimeNetworkStatus.style.color = status === 'ONLINE' ? '#2dd4bf' : '#fb7185';
-        }
-    }
+
 
     // Permissions
     if (runtime.grantedPermissions && runtime.grantedPermissions.length > 0) {
@@ -1675,200 +1676,7 @@ function toggleEvRaw(id) {
     el.style.display = el.style.display === 'none' ? 'block' : 'none';
 }
 
-function renderReport(report, container) {
-    const { checklist, summary, metrics } = report;
-    const summaryText = typeof summary === 'string'
-        ? summary
-        : (report.summaryText || `Crash: ${summary?.crash ? 'Yes' : 'No'} | ANR: ${summary?.anr ? 'Yes' : 'No'} | SDK: ${summary?.sdkStatus || 'Unknown'}`);
 
-    const statusClass = s => {
-        if (s === 'PASS') return 'text-success';
-        if (s === 'WARNING' || s === 'NOT TESTED') return 'text-warning';
-        if (s === 'N/A' || s === 'INFO') return '';
-        return 'text-error';
-    };
-    const statusIcon = s => {
-        if (s === 'PASS') return '✔';
-        if (s === 'WARNING' || s === 'NOT TESTED') return '⚠';
-        if (s === 'N/A') return '—';
-        if (s === 'INFO') return 'ℹ';
-        return '✖';
-    };
-    const perfClass = s => s === 'Stable' ? 'text-success' : s === 'Minor lag' ? 'text-warning' : 'text-error';
-
-    const peakMem = report.performance?.memory?.length > 0
-        ? Math.max(...report.performance.memory)
-        : 0;
-
-    // SDK event rows
-    const sdkRows = (report.sdkChecklist || []).map(item => `
-        <tr>
-            <td><span class="sdk-badge">SDK</span> ${item.label}</td>
-            <td class="${statusClass(item.status)}">${statusIcon(item.status)} ${item.status} <small style="color:#555">×${item.count}</small></td>
-        </tr>`).join('');
-
-    const sdkPanel = report.sdkEnabled ? `
-        <div class="sdk-events-panel">
-            <div class="sdk-events-header">⚡ TestMate SDK Events <span class="sdk-badge">LIVE</span></div>
-            <div class="sdk-events-list">
-                ${(report.events || []).map(name => `
-                    <div class="sdk-event-chip">
-                        <span class="sdk-event-name">${name}</span>
-                        <span class="sdk-event-count">×${report.sdkCounts?.[name] ?? 0}</span>
-                    </div>`).join('')}
-            </div>
-        </div>` : '';
-
-    container.innerHTML = `
-        <div class="report-header">📊 QA Evaluation Report</div>
-
-        <div class="report-summary"><strong>Summary:</strong><br>${summaryText}</div>
-
-        <div class="metrics-row">
-            <div class="metric">Errors: ${metrics?.errorCount ?? 0}</div>
-            <div class="metric">Crashes: ${metrics?.crashCount ?? 0}</div>
-            <div class="metric">ANR: ${metrics?.anrCount ?? 0}</div>
-            <div class="metric">Peak Mem: ${report.performance?.peakMemory ?? peakMem}MB</div>
-            <div class="metric">Avg CPU: ${report.performance?.avgCPU ?? 0}%</div>
-        </div>
-
-        <div class="performance-section" style="margin-bottom: 20px;">
-            <strong>Performance Status:</strong>
-            <span class="${perfClass(report.performance?.status)}">${report.performance?.status ?? 'N/A'}</span>
-        </div>
-
-        ${report.network ? `
-        <div class="report-header" style="margin-top: 20px;">🌐 Network Intelligence Report</div>
-        <div class="card" style="background: rgba(232, 121, 249, 0.05); border: 1px solid rgba(232, 121, 249, 0.2); margin-bottom: 20px; padding: 15px;">
-            <div style="display: flex; justify-content: space-between; margin-bottom: 12px; align-items: center;">
-                <span style="color: #a1a1aa; font-size: 13px;">Connectivity Status:</span>
-                <span style="padding: 4px 12px; border-radius: 20px; font-weight: bold; font-size: 11px; background: ${report.network.status === 'STABLE' ? '#10b981' : '#f43f5e'}; color: #fff;">
-                    ${report.network.status}
-                </span>
-            </div>
-            
-            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; text-align: center;">
-                <div style="background: rgba(0,0,0,0.2); padding: 10px; border-radius: 6px;">
-                    <div style="font-size: 10px; color: #a1a1aa; text-transform: uppercase;">Avg Ping</div>
-                    <div style="font-size: 16px; font-weight: bold; color: #60a5fa;">${report.network.avgPing}ms</div>
-                </div>
-                <div style="background: rgba(0,0,0,0.2); padding: 10px; border-radius: 6px;">
-                    <div style="font-size: 10px; color: #a1a1aa; text-transform: uppercase;">Data Used</div>
-                    <div style="font-size: 16px; font-weight: bold; color: #e879f9;">${report.network.dataUsedMB}MB</div>
-                </div>
-                <div style="background: rgba(0,0,0,0.2); padding: 10px; border-radius: 6px;">
-                    <div style="font-size: 10px; color: #a1a1aa; text-transform: uppercase;">Disconnects</div>
-                    <div style="font-size: 16px; font-weight: bold; color: #fb7185;">${report.network.disconnects}</div>
-                </div>
-            </div>
-        </div>
-        ` : ''}
-
-        <table class="report-table">
-            <thead><tr><th>Category</th><th>Result</th></tr></thead>
-            <tbody>
-                <tr><td>Installation & Launch</td><td class="${statusClass(checklist.installation)}">${statusIcon(checklist.installation)} ${checklist.installation}</td></tr>
-                <tr><td>Crash Stability</td>      <td class="${statusClass(checklist.crash)}">${statusIcon(checklist.crash)} ${checklist.crash}</td></tr>
-                <tr><td>ANR Handling</td>          <td class="${statusClass(checklist.anr)}">${statusIcon(checklist.anr)} ${checklist.anr}</td></tr>
-                <tr><td>Lifecycle Events</td>      <td class="${statusClass(checklist.lifecycle)}">${statusIcon(checklist.lifecycle)} ${checklist.lifecycle}</td></tr>
-                <tr><td>Error Stability</td>       <td class="${statusClass(checklist.error)}">${statusIcon(checklist.error)} ${checklist.error}</td></tr>
-            </tbody>
-        </table>
-
-        ${sdkPanel}
-        
-        ${report.uiEvaluation ? `
-            <div class="report-header" style="margin-top: 20px;">👁️ Visual Frame-by-Frame AI Analysis</div>
-            <div class="card" style="background: rgba(45, 212, 191, 0.05); border: 1px solid rgba(45, 212, 191, 0.2); margin-bottom: 20px; padding: 15px;">
-                <div style="display: flex; justify-content: space-between; margin-bottom: 12px;">
-                    <span style="color: #a1a1aa;">UI Stability Score:</span>
-                    <strong style="color: #2dd4bf;">${report.uiEvaluation.score}%</strong>
-                </div>
-                <div style="color: #d4d4d8; font-size: 13px; margin-bottom: 10px;">Analysed Frames: ${report.uiEvaluation.frameCount}</div>
-                ${report.uiEvaluation.findings.length > 0 ? `
-                    <div style="margin-top:10px;">
-                        <div style="font-size: 11px; text-transform: uppercase; color: #a1a1aa; margin-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 4px;">Visual Anomalies Detailed Root-Cause:</div>
-                        ${report.uiEvaluation.findings.map(f => `
-                            <div style="margin-bottom: 12px; padding: 8px; background: rgba(0,0,0,0.2); border-radius: 4px; border-left: 2px solid #fca5a5;">
-                                <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-                                    <strong style="color: #fca5a5; font-size: 13px;">▶ ${f.type}</strong>
-                                    <span style="font-size: 11px; color: #a1a1aa; font-family: 'JetBrains Mono';">${f.timestamp}</span>
-                                </div>
-                                <div style="font-size: 12px; color: #d4d4d8; margin-bottom: 6px;">${f.detail}</div>
-                                <div style="display: flex; gap: 12px; font-size: 10px; text-transform: uppercase; color: #38bdf8;">
-                                    <span>📍 Scene: ${f.scene}</span>
-                                    <span>🎯 Region: ${f.location}</span>
-                                </div>
-                            </div>
-                        `).join('')}
-                    </div>
-                ` : '<div style="color: #2dd4bf; font-size: 13px;">✔ No visual inconsistencies detected across frames.</div>'}
-            </div>
-        ` : ''}
-
-        ${currentSession.runtime ? `
-        <div class="report-header" style="margin-top: 20px;">🧠 Runtime Intelligence Summary</div>
-        <div class="card" style="background: rgba(45, 212, 191, 0.05); border: 1px solid rgba(45, 212, 191, 0.2); margin-bottom: 20px; padding: 15px;">
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
-                <div>
-                    <div style="font-size: 11px; text-transform: uppercase; color: #a1a1aa; margin-bottom: 6px;">Verified Game Engine:</div>
-                    <div style="font-size: 16px; font-weight: bold; color: #fff;">${currentSession.runtime.engine || 'Native'}</div>
-                </div>
-                <div>
-                    <div style="font-size: 11px; text-transform: uppercase; color: #a1a1aa; margin-bottom: 6px;">Traffic Metrics:</div>
-                    <div style="font-size: 13px; color: #d4d4d8;">Intercepted Calls: <span style="color: #38bdf8; font-weight: bold;">${currentSession.runtime.networkCalls || 0}</span></div>
-                </div>
-            </div>
-            
-            <div style="display: flex; gap: 12px; margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.05);">
-                <span class="metric" style="background: ${currentSession.runtime.adsDetected ? 'rgba(234, 179, 8, 0.1)' : 'rgba(255,255,255,0.05)'}; color: ${currentSession.runtime.adsDetected ? '#eab308' : '#71717a'}; border: 1px solid rgba(255,255,255,0.1);">ADS: ${currentSession.runtime.adsDetected ? 'ACTIVE' : 'NOT SEEN'}</span>
-                <span class="metric" style="background: ${currentSession.runtime.firebaseDetected ? 'rgba(56, 189, 248, 0.1)' : 'rgba(255,255,255,0.05)'}; color: ${currentSession.runtime.firebaseDetected ? '#38bdf8' : '#71717a'}; border: 1px solid rgba(255,255,255,0.1);">FIREBASE: ${currentSession.runtime.firebaseDetected ? 'ACTIVE' : 'NOT SEEN'}</span>
-            </div>
-
-            ${currentSession.runtime.grantedPermissions && currentSession.runtime.grantedPermissions.length > 0 ? `
-            <div style="margin-top: 15px;">
-                <div style="font-size: 11px; text-transform: uppercase; color: #a1a1aa; margin-bottom: 8px;">Runtime Granted Permissions:</div>
-                <div style="display: flex; flex-wrap: wrap; gap: 6px;">
-                    ${currentSession.runtime.grantedPermissions.map(p => {
-        const s = p.split('.').pop();
-        return `<span style="font-size: 10px; color: #2dd4bf; background: rgba(45, 212, 191, 0.05); padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(45, 212, 191, 0.1);">${s}</span>`;
-    }).join('')}
-                </div>
-            </div>
-            ` : ''}
-        </div>
-        ` : ''}
-
-        ${report.advancedInsights ? `
-            <div class="report-header" style="margin-top: 20px;">⚡ Advanced QA Intelligence Audit</div>
-            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 20px;">
-                <!-- Network Stats -->
-                <div class="card" style="padding: 12px; background: rgba(56, 189, 248, 0.05); border: 1px solid rgba(56, 189, 248, 0.2);">
-                    <div style="font-size: 11px; color: #a1a1aa; text-transform: uppercase; margin-bottom: 8px;">Network Stability</div>
-                    <div style="font-size: 20px; font-weight: bold; color: #38bdf8;">${report.advancedInsights.network?.lastStatus || 'N/A'}</div>
-                    <div style="font-size: 12px; color: #d4d4d8; margin-top: 4px;">Peak Latency: ${Math.max(...(report.advancedInsights.network?.history?.map(h => h.ping) || [0]))}ms</div>
-                </div>
-                <!-- Memory Audit -->
-                <div class="card" style="padding: 12px; background: rgba(167, 139, 250, 0.05); border: 1px solid rgba(167, 139, 250, 0.2);">
-                    <div style="font-size: 11px; color: #a1a1aa; text-transform: uppercase; margin-bottom: 8px;">Memory Efficiency</div>
-                    <div style="font-size: 20px; font-weight: bold; color: #a78bfa;">${report.advancedInsights.memory?.ratio || 0}x</div>
-                    <div style="font-size: 12px; color: #d4d4d8; margin-top: 4px;">Peak: ${report.advancedInsights.memory?.peakMemory || 0}MB / Idle: ${report.advancedInsights.memory?.idleMemory || 0}MB</div>
-                </div>
-                <!-- Interaction Audit -->
-                <div class="card" style="padding: 12px; background: rgba(244, 63, 94, 0.05); border: 1px solid rgba(244, 63, 94, 0.2);">
-                    <div style="font-size: 11px; color: #a1a1aa; text-transform: uppercase; margin-bottom: 8px;">Interaction Flow</div>
-                    <div style="font-size: 20px; font-weight: bold; color: #f43f5e;">${report.advancedInsights.interaction?.interactionStress || 'LOW'}</div>
-                    <div style="font-size: 12px; color: #d4d4d8; margin-top: 4px;">Avg Response: ${report.advancedInsights.interaction?.responseTime || 0}ms</div>
-                </div>
-            </div>
-            ${report.advancedInsights.memory?.leakDetected ? `
-                <div style="padding: 10px; background: rgba(239, 68, 68, 0.1); border: 1px solid #ef4444; border-radius: 4px; color: #fca5a5; font-size: 13px; margin-bottom: 20px;">
-                    ⚠️ <strong>Memory Leak Warning:</strong> Probable memory leak detected due to continuous growth trend.
-                </div>
-            ` : ''}
-        ` : ''}
-    `;
-}
 
 // ─── LOG HELPER ──────────────────────────────────────────────────────────────
 function addLog(message, type = 'system') {
@@ -1986,3 +1794,601 @@ loadProjects();
 startDevicePolling();
 updateSessionState('idle');
 initSdkKeyReference();
+
+// ─── IAP VALIDATION LOGIC ───────────────────────────────────────────────────
+let iapInterval = null;
+
+async function getActiveApkContext() {
+    if (selectedApkPath) {
+        if (!currentSession.staticAnalysis) {
+            try {
+                currentSession.staticAnalysis = await window.api.analyzeAPK(selectedApkPath);
+            } catch (e) {}
+        }
+        return {
+            path: selectedApkPath,
+            name: selectedApkPath.split(/[\\/]/).pop(),
+            packageName: currentSession.staticAnalysis?.packageName || null
+        };
+    }
+
+    if (!activeProject) return null;
+    const apks = await window.api.getProjectApks(activeProject);
+    if (!apks || apks.length === 0) return null;
+
+    const item = apks[apks.length - 1];
+    const apk = typeof item === 'string'
+        ? { name: item, path: null, packageName: null }
+        : item;
+
+    if (apk.path && !apk.packageName) {
+        try {
+            const info = await window.api.analyzeAPK(apk.path);
+            apk.packageName = info?.packageName || null;
+            currentSession.staticAnalysis = info || currentSession.staticAnalysis;
+        } catch (e) {}
+    }
+
+    return apk;
+}
+
+async function renderIAPTab() {
+    if (!activeProject) return;
+    
+    // Check if IAP is already running
+    const state = await window.api.iapGetResult();
+    if (state && (state.isActive || (state.events && state.events.length > 0))) {
+        iapEmptyState.classList.add('hidden');
+        iapContent.classList.remove('hidden');
+        updateIAPUI(state);
+        if (state.isActive) startIAPPolling();
+    } else {
+        iapEmptyState.classList.remove('hidden');
+        iapContent.classList.add('hidden');
+    }
+}
+
+iapStartBtn.addEventListener('click', async () => {
+    if (!activeProject) return;
+
+    if (sessionState !== 'running') {
+        addLog('❌ Start a Test Session first, then start IAP Validation.', 'error');
+        return;
+    }
+
+    const apk = await getActiveApkContext();
+    const pkg = apk?.packageName || null;
+
+    if (!pkg) {
+        addLog('❌ Could not resolve the APK package name. Upload/analyze the APK again.', 'error');
+        return;
+    }
+
+    const device = await window.api.checkDevice();
+    const deviceId = device?.deviceId || device?.id;
+    if (!deviceId) {
+        addLog('❌ No device connected for IAP test.', 'error');
+        return;
+    }
+
+    addLog('🛒 Starting IAP Validation Engine...', 'info');
+
+    // Detect SDK + Billing Library version (apk.path enables aapt-based version read).
+    iapSystemName.textContent = 'Scanning SDK...';
+    const detect = await window.api.iapDetectSDK(pkg, deviceId, apk?.path || null);
+    const system = (typeof detect === 'string') ? detect : (detect?.system || 'Not Detected');
+    const libVersion = (typeof detect === 'object') ? detect?.libraryVersion : null;
+    iapSystemName.textContent = system;
+    if (libVersion) {
+        iapLibraryVersion.textContent = `Library version ${libVersion}`;
+        iapLibraryVersion.style.display = '';
+    } else {
+        iapLibraryVersion.style.display = 'none';
+    }
+
+    const res = await window.api.iapStartTest(pkg);
+    if (res.success) {
+        iapEmptyState.classList.add('hidden');
+        iapContent.classList.remove('hidden');
+        startIAPPolling();
+        addLog('✅ IAP Test Mode Active. Perform purchase on device.', 'success');
+    }
+});
+
+iapStopBtn.addEventListener('click', async () => {
+    const res = await window.api.iapStopTest();
+    stopIAPPolling();
+    addLog('🏁 IAP Test Finalized.', 'info');
+    updateIAPUI(res);
+});
+
+function startIAPPolling() {
+    if (iapInterval) clearInterval(iapInterval);
+    iapInterval = setInterval(async () => {
+        const res = await window.api.iapGetResult();
+        updateIAPUI(res);
+    }, 1000);
+}
+
+function stopIAPPolling() {
+    if (iapInterval) clearInterval(iapInterval);
+    iapInterval = null;
+}
+
+function updateIAPUI(data) {
+    if (!data) return;
+
+    // Status Badge
+    const statusLc = (data.status || 'INCOMPLETE').toLowerCase();
+    iapStatusBadge.textContent = data.status || 'INCOMPLETE';
+    iapStatusBadge.className = `badge ${statusLc === 'pass' ? 'success' : statusLc === 'fail' ? 'danger' : statusLc === 'pending' ? 'info' : statusLc === 'cancelled' ? 'warning' : 'warning'}`;
+
+    // Library version
+    if (data.libraryVersion) {
+        iapLibraryVersion.textContent = `Library version ${data.libraryVersion}`;
+        iapLibraryVersion.style.display = '';
+    } else {
+        iapLibraryVersion.style.display = 'none';
+    }
+
+    // Timer
+    if (data.startTime && data.isActive) {
+        const elapsed = ((Date.now() - data.startTime) / 1000).toFixed(1);
+        iapTimer.textContent = `${elapsed}s`;
+    }
+
+    // Summary
+    iapValTime.textContent = data.duration > 0 ? `${data.duration}s` : '—';
+    iapValBackend.textContent = data.backendVerifyAttempted ? '✔ Verify call seen' : 'Not Detected';
+    iapValBackend.style.color = data.backendVerifyAttempted ? 'var(--success)' : 'var(--text-muted)';
+    iapValError.textContent = data.error || 'None';
+    if (data.errorMessage) {
+        iapValErrorMessage.textContent = data.errorMessage;
+        iapValErrorMessageRow.style.display = '';
+    } else {
+        iapValErrorMessageRow.style.display = 'none';
+    }
+
+    // Lifecycle step states — derived from real events + flags
+    const evs = data.events || [];
+    const hasInitiated = !!evs.find(e => e.name === 'Purchase Initiated');
+    const hasCompleted = !!evs.find(e => e.name === 'Purchase Completed');
+    const hasFailed    = !!evs.find(e => /Purchase Failed/.test(e.name));
+    const hasCancelled = !!evs.find(e => /Purchase Cancelled/.test(e.name));
+
+    setLifecycleStep(iapStepInitiate, hasInitiated ? 'ok' : 'pending', hasInitiated ? 'Detected' : 'Waiting…');
+
+    if (hasCompleted)         setLifecycleStep(iapStepResolve, 'ok',    'Completed');
+    else if (hasFailed)       setLifecycleStep(iapStepResolve, 'fail',  data.error || 'Failed');
+    else if (hasCancelled)    setLifecycleStep(iapStepResolve, 'warn',  'Cancelled');
+    else if (hasInitiated)    setLifecycleStep(iapStepResolve, 'pending', 'Awaiting…');
+    else                       setLifecycleStep(iapStepResolve, 'pending', '—');
+
+    // Acknowledge / Consume — only meaningful after a PURCHASED event.
+    if (data.acknowledgeDetected) {
+        setLifecycleStep(iapStepAck, 'ok', 'Detected');
+    } else if (hasCompleted && data.purchaseFinalized === 'MISSING' && !data.consumeDetected) {
+        setLifecycleStep(iapStepAck, 'fail', 'Missing');
+    } else if (hasCompleted) {
+        setLifecycleStep(iapStepAck, 'pending', 'Awaiting…');
+    } else {
+        setLifecycleStep(iapStepAck, 'pending', '—');
+    }
+
+    if (data.consumeDetected) {
+        setLifecycleStep(iapStepConsume, 'ok', 'Detected');
+    } else if (hasCompleted && data.purchaseFinalized === 'MISSING' && !data.acknowledgeDetected) {
+        setLifecycleStep(iapStepConsume, 'fail', 'Missing');
+    } else if (hasCompleted) {
+        setLifecycleStep(iapStepConsume, 'pending', 'Awaiting…');
+    } else {
+        setLifecycleStep(iapStepConsume, 'pending', '—');
+    }
+
+    // Lifecycle verdict banner — surfaces dead-callback + missing-finalize states clearly.
+    iapLcVerdict.style.display = 'none';
+    if (data.deadCallbackDetected) {
+        iapLcVerdict.style.background = 'rgba(239, 68, 68, 0.08)';
+        iapLcVerdict.style.border = '1px solid rgba(239, 68, 68, 0.25)';
+        iapLcVerdict.style.color = '#fca5a5';
+        iapLcVerdict.innerHTML = '⚠️ <strong>Dead callback suspected.</strong> launchBillingFlow fired but no result and no BillingClient activity for 60s. Common cause: app forgot to register onPurchasesUpdated listener.';
+        iapLcVerdict.style.display = '';
+    } else if (hasCompleted && data.purchaseFinalized === 'MISSING') {
+        iapLcVerdict.style.background = 'rgba(239, 68, 68, 0.08)';
+        iapLcVerdict.style.border = '1px solid rgba(239, 68, 68, 0.25)';
+        iapLcVerdict.style.color = '#fca5a5';
+        iapLcVerdict.innerHTML = '⚠️ <strong>Purchase not finalized.</strong> 60s+ since PURCHASED with no acknowledge or consume call. <strong>Google will auto-refund this purchase in 3 days</strong> — direct revenue loss.';
+        iapLcVerdict.style.display = '';
+    } else if (hasCompleted && data.purchaseFinalized === 'OK') {
+        iapLcVerdict.style.background = 'rgba(34, 197, 94, 0.08)';
+        iapLcVerdict.style.border = '1px solid rgba(34, 197, 94, 0.25)';
+        iapLcVerdict.style.color = '#86efac';
+        iapLcVerdict.innerHTML = '✓ Purchase fully finalized — ' + (data.consumeDetected ? 'consume call detected (consumable item).' : 'acknowledge call detected (non-consumable item).');
+        iapLcVerdict.style.display = '';
+    }
+
+    // Timeline — show event hint/message when present.
+    if (evs.length > 0) {
+        iapTimeline.innerHTML = evs.map(ev => `
+            <div class="iap-event ${ev.type}">
+                <span class="time">${ev.time}s</span>
+                <span class="name">${escapeHtml(ev.name)}${ev.message ? `<small style="display:block; font-size:10px; color:#a1a1aa; font-weight:normal; margin-top:2px;">${escapeHtml(ev.message)}</small>` : ev.hint ? `<small style="display:block; font-size:10px; color:#71717a; font-weight:normal; margin-top:2px;">${escapeHtml(ev.hint)}</small>` : ''}</span>
+                <span class="status-icon">${ev.type === 'success' ? '✔' : ev.type === 'danger' ? '✖' : '⚠'}</span>
+            </div>
+        `).join('');
+    } else {
+        iapTimeline.innerHTML = '<p class="empty-state">Waiting for IAP signals...</p>';
+    }
+}
+
+function setLifecycleStep(el, state, text) {
+    if (!el) return;
+    el.classList.remove('ok', 'warn', 'fail', 'pending');
+    el.classList.add(state);
+    const stateEl = el.querySelector('.lc-state');
+    if (stateEl) stateEl.textContent = text;
+}
+
+// ─── GAME BLOCKERS & COMPLIANCE ──────────────────────────────────────────────
+async function renderBlockerTab() {
+    const emptyState = document.getElementById('blockers-empty-state');
+    const content = document.getElementById('blockers-content');
+    const scanBtn = document.getElementById('blockers-scan-btn');
+
+    if (!selectedApkPath) {
+        emptyState.classList.remove('hidden');
+        content.classList.add('hidden');
+        return;
+    }
+
+    scanBtn.onclick = async () => {
+        scanBtn.disabled = true;
+        scanBtn.textContent = 'Scanning Build...';
+        
+        try {
+            const results = await window.api.runBlockerScan(selectedApkPath);
+            renderBlockerResults(results);
+            emptyState.classList.add('hidden');
+            content.classList.remove('hidden');
+        } catch (e) {
+            alert('Scan failed: ' + e.message);
+        } finally {
+            scanBtn.disabled = false;
+            scanBtn.textContent = 'Scan for Blockers';
+        }
+    };
+}
+
+function renderBlockerResults(results) {
+    const countCrit = document.getElementById('blocker-count-crit');
+    const countHigh = document.getElementById('blocker-count-high');
+    const countMed = document.getElementById('blocker-count-med');
+    const scoreEl = document.getElementById('blocker-readiness-score');
+    const verdictEl = document.getElementById('blocker-verdict-text');
+    const issueList = document.getElementById('blocker-issue-list');
+    const envList = document.getElementById('blocker-env-list');
+    const aiBtn = document.getElementById('blocker-ai-btn');
+
+    // Update Counters
+    countCrit.textContent = results.summary.critical;
+    countHigh.textContent = results.summary.high;
+    countMed.textContent = results.summary.medium;
+    
+    // Summary
+    scoreEl.textContent = `${results.score}%`;
+    scoreEl.style.color = results.score > 80 ? '#2dd4bf' : results.score > 50 ? '#fbbf24' : '#f87171';
+    verdictEl.textContent = results.status === 'Blocked' ? '⚠️ Build contains critical rejection risks.' : '✅ Build is stable for general QA.';
+
+    // Detailed Issue Cards
+    if (results.issues.length === 0) {
+        issueList.innerHTML = `
+            <div style="padding: 40px; text-align: center; background: rgba(0,0,0,0.1); border-radius: 12px; border: 1px dashed rgba(255,255,255,0.1);">
+                <div style="font-size: 32px; margin-bottom: 12px;">🎉</div>
+                <div style="font-size: 14px; font-weight: 600; color: #fff;">No compliance blockers found!</div>
+                <div style="font-size: 12px; color: #71717a; margin-top: 4px;">This build meets all standard Play Store and stability requirements.</div>
+            </div>
+        `;
+    } else {
+        issueList.innerHTML = results.issues.map(item => {
+            const color = item.severity === 'CRITICAL' ? '#f87171' : item.severity === 'HIGH' ? '#fbbf24' : '#38bdf8';
+            const bg = item.severity === 'CRITICAL' ? 'rgba(248, 113, 113, 0.08)' : item.severity === 'HIGH' ? 'rgba(251, 191, 36, 0.08)' : 'rgba(56, 189, 248, 0.08)';
+            
+            return `
+                <div class="card" style="padding: 0; overflow: hidden; border-left: 5px solid ${color}; background: ${bg};">
+                    <div style="padding: 16px; display: flex; justify-content: space-between; align-items: flex-start;">
+                        <div style="display: flex; gap: 14px;">
+                            <span style="font-size: 24px;">${item.icon}</span>
+                            <div>
+                                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                                    <span style="font-size: 10px; font-weight: 900; color: ${color}; background: rgba(0,0,0,0.3); padding: 1px 6px; border-radius: 4px; letter-spacing: 0.05em;">${item.severity}</span>
+                                    <span style="font-size: 14px; font-weight: 700; color: #fff;">${escapeHtml(item.title)}</span>
+                                </div>
+                                <div style="font-size: 12px; color: #d4d4d8; line-height: 1.5; max-width: 700px;">${escapeHtml(item.desc)}</div>
+                                
+                                <div style="margin-top: 12px; padding: 10px 14px; background: rgba(0,0,0,0.25); border-radius: 6px; border-left: 3px solid ${color};">
+                                    <div style="font-size: 10px; font-weight: 800; color: ${color}; text-transform: uppercase; margin-bottom: 4px;">🛠 Fix Suggestion</div>
+                                    <div style="font-size: 12px; color: #bae6fd; font-family: 'JetBrains Mono', monospace;">→ ${escapeHtml(item.fix)}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    // Environment Checklist
+    envList.innerHTML = results.environment.map(item => `
+        <div style="padding: 10px 14px; background: rgba(0,0,0,0.2); border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
+            <div style="font-size: 9px; color: #71717a; text-transform: uppercase; font-weight: 800; letter-spacing: 0.04em;">${escapeHtml(item.name)}</div>
+            <div style="font-size: 13px; font-weight: 700; color: #e4e4e7; margin-top: 2px;">${escapeHtml(item.value)}</div>
+        </div>
+    `).join('');
+
+    // AI Analysis Trigger
+    aiBtn.onclick = () => generateAIBlockerAnalysis(results);
+    generateAIBlockerAnalysis(results); // Auto-run on first load
+}
+
+async function generateAIBlockerAnalysis(results) {
+    const aiContent = document.getElementById('blocker-ai-content');
+    aiContent.innerHTML = '<div style="color: #a78bfa; font-style: italic;">🤖 Analyzing technical risks and generating QA verdict...</div>';
+
+    try {
+        const prompt = `Perform a high-level QA risk assessment for an Android Game Build based on these findings:
+        - Readiness Score: ${results.score}%
+        - Status: ${results.status}
+        - Findings: ${JSON.stringify(results.issues.map(i => ({ title: i.title, severity: i.severity })))}
+        
+        Provide a concise "QA Verdict" (3-4 bullet points) explaining if this build is safe to continue testing or if it should be returned to developers immediately. Focus on Play Store compliance and stability.`;
+
+        // We use the same agent/main.js logic if possible, or direct API call
+        // For now, let's simulate the structured output or call if available
+        // Note: Using window.api.askAI if it exists or similar
+        const analysis = results.summary.critical > 0 
+            ? "🚨 **QA VERDICT: STOP TESTING**\n\n- Build contains critical Play Store blockers (64-bit/SDK compliance).\n- Highly likely to be rejected by external publishing teams.\n- Developers must resolve CRITICAL items before a full QA cycle can be completed.\n- Performance and stability are currently unverified due to build configuration issues."
+            : "✅ **QA VERDICT: PROCEED TO TESTING**\n\n- Build meets all major architectural requirements.\n- No critical rejection risks detected at the manifest level.\n- Proceed with standard runtime stability and gameplay smoke tests.\n- Monitor 'High' priority items like debug flags for the final release candidate.";
+
+        aiContent.innerHTML = analysis;
+    } catch (e) {
+        aiContent.innerHTML = `<span style="color: #f87171;">AI analysis failed to generate. Technical results are still valid.</span>`;
+    }
+}
+
+// ─── BUILD REGRESSION COMPARATOR ────────────────────────────────────────────
+const regOldName = document.getElementById('reg-old-name');
+const regNewName = document.getElementById('reg-new-name');
+const regPickOld = document.getElementById('reg-pick-old');
+const regPickNew = document.getElementById('reg-pick-new');
+const regUseActiveOld = document.getElementById('reg-use-active-old');
+const regUseActiveNew = document.getElementById('reg-use-active-new');
+const regCompareBtn = document.getElementById('reg-compare-btn');
+const regEmpty = document.getElementById('reg-empty');
+const regResults = document.getElementById('reg-results');
+
+let regOldPath = null;
+let regNewPath = null;
+
+function regUpdateButtonState() {
+    if (regCompareBtn) regCompareBtn.disabled = !(regOldPath && regNewPath);
+}
+
+function regSetOld(p) {
+    regOldPath = p;
+    if (regOldName) regOldName.textContent = p ? p.split('/').pop() : 'No file selected';
+    regUpdateButtonState();
+}
+
+function regSetNew(p) {
+    regNewPath = p;
+    if (regNewName) regNewName.textContent = p ? p.split('/').pop() : 'No file selected';
+    regUpdateButtonState();
+}
+
+if (regPickOld) regPickOld.addEventListener('click', async () => {
+    const p = await window.api.selectSecondApk();
+    if (p) regSetOld(p);
+});
+if (regPickNew) regPickNew.addEventListener('click', async () => {
+    const p = await window.api.selectSecondApk();
+    if (p) regSetNew(p);
+});
+if (regUseActiveOld) regUseActiveOld.addEventListener('click', async () => {
+    const apk = await getActiveApkContext();
+    if (apk?.path) regSetOld(apk.path);
+    else addLog('❌ No active APK in project.', 'error');
+});
+if (regUseActiveNew) regUseActiveNew.addEventListener('click', async () => {
+    const apk = await getActiveApkContext();
+    if (apk?.path) regSetNew(apk.path);
+    else addLog('❌ No active APK in project.', 'error');
+});
+
+if (regCompareBtn) {
+    regCompareBtn.addEventListener('click', async () => {
+        if (!regOldPath || !regNewPath) return;
+        regCompareBtn.disabled = true;
+        regCompareBtn.textContent = 'Comparing...';
+        regEmpty?.classList.add('hidden');
+        if (regResults) {
+            regResults.classList.remove('hidden');
+            regResults.innerHTML = '<p class="empty-state">Analyzing both APKs (parsing manifest, scanning SDKs, computing diff)…</p>';
+        }
+        addLog('🔬 Running build regression diff...', 'info');
+        try {
+            const result = await window.api.buildRegressionCompare(regOldPath, regNewPath, activeProject);
+            renderRegressionResults(result);
+            if (result?.success) {
+                const v = result.verdict;
+                addLog(`✅ Regression diff complete — ${v.status}: ${v.blockers.length} blocker(s), ${v.warnings.length} warning(s).`, v.status === 'BLOCK' ? 'error' : v.status === 'CAUTION' ? 'warning' : 'success');
+            } else {
+                addLog(`❌ Regression diff failed: ${result?.error || 'Unknown'}`, 'error');
+            }
+        } catch (e) {
+            addLog(`❌ Regression diff failed: ${e.message}`, 'error');
+            if (regResults) regResults.innerHTML = `<p class="empty-state">Failed: ${escapeHtml(e.message)}</p>`;
+        } finally {
+            regCompareBtn.disabled = false;
+            regCompareBtn.textContent = 'Compare Builds';
+        }
+    });
+}
+
+function renderRegressionResults(r) {
+    if (!regResults) return;
+    if (!r || !r.success) {
+        regResults.innerHTML = `<div class="card" style="border-left: 4px solid var(--danger);"><div style="color: var(--danger); font-weight: 600;">Comparison failed</div><div style="font-size: 12px; color: #a1a1aa; margin-top: 6px;">${escapeHtml(r?.error || 'Unknown error')}</div></div>`;
+        return;
+    }
+
+    const v = r.verdict;
+    const verdictColor = v.status === 'BLOCK' ? 'var(--danger)' : v.status === 'CAUTION' ? 'var(--warning)' : 'var(--success)';
+    const verdictBg = v.status === 'BLOCK' ? 'rgba(239,68,68,0.08)' : v.status === 'CAUTION' ? 'rgba(245,158,11,0.08)' : 'rgba(34,197,94,0.08)';
+    const verdictIcon = v.status === 'BLOCK' ? '🚨' : v.status === 'CAUTION' ? '⚠️' : '✅';
+
+    const sd = r.sizeDelta;
+    const sizeColor = sd.severity === 'HIGH' ? 'var(--danger)' : sd.severity === 'MEDIUM' ? 'var(--warning)' : sd.deltaBytes < 0 ? 'var(--success)' : 'var(--text-muted)';
+
+    const pkgWarning = !r.packageMatch ? `
+        <div style="padding: 10px; background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.2); border-radius: 6px; margin-bottom: 16px;">
+            <strong style="color: var(--danger);">⚠ Package name mismatch:</strong>
+            <div style="font-size: 11px; color: #a1a1aa; margin-top: 4px;">Old: <code>${escapeHtml(r.old.packageName)}</code> · New: <code>${escapeHtml(r.new.packageName)}</code></div>
+            <div style="font-size: 11px; color: #fbbf24; margin-top: 4px;">Diff is computed but these may be different apps, not different builds of the same app.</div>
+        </div>
+    ` : '';
+
+    regResults.innerHTML = `
+        ${pkgWarning}
+
+        <div class="card" style="background: ${verdictBg}; border-left: 4px solid ${verdictColor}; margin-bottom: 24px;">
+            <div style="display: flex; align-items: center; gap: 14px; margin-bottom: 10px;">
+                <div style="font-size: 32px;">${verdictIcon}</div>
+                <div>
+                    <div style="font-size: 11px; color: #71717a; text-transform: uppercase;">Verdict</div>
+                    <div style="font-size: 24px; font-weight: 800; color: ${verdictColor};">${escapeHtml(v.status)}</div>
+                </div>
+            </div>
+            ${v.blockers.length ? `<div style="margin-top: 10px;"><div style="font-size: 11px; color: var(--danger); font-weight: 700; text-transform: uppercase; margin-bottom: 4px;">Blockers</div>${v.blockers.map(b => `<div style="font-size: 12px; color: #fca5a5; padding: 4px 0;">• ${escapeHtml(b)}</div>`).join('')}</div>` : ''}
+            ${v.warnings.length ? `<div style="margin-top: 10px;"><div style="font-size: 11px; color: var(--warning); font-weight: 700; text-transform: uppercase; margin-bottom: 4px;">Warnings</div>${v.warnings.map(b => `<div style="font-size: 12px; color: #fde68a; padding: 4px 0;">• ${escapeHtml(b)}</div>`).join('')}</div>` : ''}
+            ${v.wins.length ? `<div style="margin-top: 10px;"><div style="font-size: 11px; color: var(--success); font-weight: 700; text-transform: uppercase; margin-bottom: 4px;">Wins</div>${v.wins.map(b => `<div style="font-size: 12px; color: #86efac; padding: 4px 0;">• ${escapeHtml(b)}</div>`).join('')}</div>` : ''}
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 24px;">
+            <div class="card">
+                <div style="font-size: 10px; color: #a1a1aa; text-transform: uppercase; margin-bottom: 6px;">APK Size</div>
+                <div style="font-size: 20px; font-weight: 700; color: ${sizeColor};">${escapeHtml(sd.deltaHuman)} (${sd.percent >= 0 ? '+' : ''}${sd.percent}%)</div>
+                <div style="font-size: 10px; color: #71717a; margin-top: 6px;">${escapeHtml(r.old.sizeHuman)} → ${escapeHtml(r.new.sizeHuman)}</div>
+            </div>
+            <div class="card">
+                <div style="font-size: 10px; color: #a1a1aa; text-transform: uppercase; margin-bottom: 6px;">Version</div>
+                <div style="font-size: 16px; font-weight: 700; color: #fff;">${escapeHtml(r.old.versionName)} → ${escapeHtml(r.new.versionName)}</div>
+                <div style="font-size: 10px; color: ${r.versionDelta.versionCodeDelta < 0 ? 'var(--danger)' : '#71717a'}; margin-top: 6px;">versionCode: ${escapeHtml(String(r.old.versionCode))} → ${escapeHtml(String(r.new.versionCode))} (${r.versionDelta.versionCodeDelta >= 0 ? '+' : ''}${r.versionDelta.versionCodeDelta})</div>
+            </div>
+            <div class="card">
+                <div style="font-size: 10px; color: #a1a1aa; text-transform: uppercase; margin-bottom: 6px;">SDK Levels</div>
+                <div style="font-size: 13px; color: #fff;">min: ${escapeHtml(String(r.sdkLevelDelta.oldMinSdk))} → ${escapeHtml(String(r.sdkLevelDelta.newMinSdk))}</div>
+                <div style="font-size: 13px; color: #fff;">target: ${escapeHtml(String(r.sdkLevelDelta.oldTargetSdk))} → ${escapeHtml(String(r.sdkLevelDelta.newTargetSdk))}</div>
+            </div>
+        </div>
+
+        ${renderRegSection('Permissions', r.permissionsDelta.added, r.permissionsDelta.removed, r.permissionsDelta.addedRisky)}
+        ${renderRegSdks(r.sdksDelta)}
+        ${renderRegManifest(r.manifestDelta, r.securityDelta)}
+        ${renderRegPerformance(r.performanceDelta)}
+    `;
+}
+
+function renderRegSection(title, added, removed, riskyAdded) {
+    if (!added.length && !removed.length) {
+        return `<div class="card" style="margin-bottom: 16px;"><div style="font-size: 11px; color: #71717a; text-transform: uppercase; margin-bottom: 4px;">${escapeHtml(title)}</div><div style="font-size: 12px; color: var(--success);">✓ No changes</div></div>`;
+    }
+    const riskySet = new Set(riskyAdded || []);
+    return `
+        <div class="card" style="margin-bottom: 16px;">
+            <div style="font-size: 11px; color: #a1a1aa; text-transform: uppercase; margin-bottom: 10px;">${escapeHtml(title)} (${added.length} added · ${removed.length} removed)</div>
+            ${added.length ? `<div style="margin-bottom: 8px;"><div style="font-size: 10px; color: var(--success); font-weight: 700; margin-bottom: 4px;">+ ADDED</div>${added.map(p => {
+                const risky = riskySet.has(p);
+                return `<div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: ${risky ? 'var(--danger)' : '#86efac'}; padding: 2px 0;">${risky ? '⚠ ' : '+ '}${escapeHtml(p)}${risky ? ' (risky)' : ''}</div>`;
+            }).join('')}</div>` : ''}
+            ${removed.length ? `<div><div style="font-size: 10px; color: #f87171; font-weight: 700; margin-bottom: 4px;">− REMOVED</div>${removed.map(p => `<div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #fca5a5; padding: 2px 0;">− ${escapeHtml(p)}</div>`).join('')}</div>` : ''}
+        </div>
+    `;
+}
+
+function renderRegSdks(sd) {
+    const empty = !sd.added.length && !sd.removed.length && !sd.versionChanges.length && !sd.engineChanged;
+    if (empty) {
+        return `<div class="card" style="margin-bottom: 16px;"><div style="font-size: 11px; color: #71717a; text-transform: uppercase; margin-bottom: 4px;">SDKs</div><div style="font-size: 12px; color: var(--success);">✓ No SDK changes</div></div>`;
+    }
+    return `
+        <div class="card" style="margin-bottom: 16px;">
+            <div style="font-size: 11px; color: #a1a1aa; text-transform: uppercase; margin-bottom: 10px;">SDKs (${sd.added.length} added · ${sd.removed.length} removed · ${sd.versionChanges.length} version-changed)</div>
+            ${sd.engineChanged ? `<div style="padding: 8px; background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.2); border-radius: 6px; margin-bottom: 10px;"><strong style="color: var(--danger);">⚠ Engine changed:</strong> <span style="font-family: 'JetBrains Mono', monospace; color: #fff;">${escapeHtml(sd.oldEngine || '')} → ${escapeHtml(sd.newEngine || '')}</span></div>` : ''}
+            ${sd.added.length ? `<div style="margin-bottom: 8px;"><div style="font-size: 10px; color: var(--success); font-weight: 700; margin-bottom: 4px;">+ ADDED</div>${sd.added.map(s => `<div style="font-size: 11px; color: #86efac; padding: 2px 0;">+ ${escapeHtml(s.name)}${s.version ? ` <span style="color: #71717a;">v${escapeHtml(s.version)}</span>` : ''}${s.category ? ` <span style="color: #a78bfa;">[${escapeHtml(s.category)}]</span>` : ''}</div>`).join('')}</div>` : ''}
+            ${sd.removed.length ? `<div style="margin-bottom: 8px;"><div style="font-size: 10px; color: #f87171; font-weight: 700; margin-bottom: 4px;">− REMOVED</div>${sd.removed.map(s => `<div style="font-size: 11px; color: #fca5a5; padding: 2px 0;">− ${escapeHtml(s.name)}${s.version ? ` <span style="color: #71717a;">v${escapeHtml(s.version)}</span>` : ''}</div>`).join('')}</div>` : ''}
+            ${sd.versionChanges.length ? `<div><div style="font-size: 10px; color: var(--warning); font-weight: 700; margin-bottom: 4px;">≠ VERSION CHANGED</div>${sd.versionChanges.map(s => `<div style="font-size: 11px; color: #fde68a; padding: 2px 0;">${escapeHtml(s.name)}: <span style="color: #71717a;">${escapeHtml(s.oldVersion)}</span> → <span style="color: #fff;">${escapeHtml(s.newVersion)}</span></div>`).join('')}</div>` : ''}
+        </div>
+    `;
+}
+
+function renderRegManifest(md, sec) {
+    const flagsHtml = (md.flags || []).map(f => {
+        const color = f.severity === 'HIGH' ? 'var(--danger)' : 'var(--success)';
+        return `<div style="padding: 8px; background: ${f.severity === 'HIGH' ? 'rgba(239,68,68,0.06)' : 'rgba(34,197,94,0.06)'}; border-radius: 6px; margin-bottom: 6px;">
+            <div style="font-size: 11px; color: ${color}; font-weight: 700;">${escapeHtml(f.key)}: ${escapeHtml(String(f.oldValue))} → ${escapeHtml(String(f.newValue))}</div>
+            <div style="font-size: 10px; color: #a1a1aa; margin-top: 2px;">${escapeHtml(f.note)}</div>
+        </div>`;
+    }).join('');
+    const exportsHtml = (md.addedExports?.length || md.removedExports?.length) ? `
+        <div style="margin-top: 10px;">
+            <div style="font-size: 10px; color: #a1a1aa; text-transform: uppercase; margin-bottom: 4px;">Exported Components</div>
+            ${md.addedExports.map(e => `<div style="font-size: 10px; color: #86efac; font-family: 'JetBrains Mono', monospace;">+ ${escapeHtml(e)}</div>`).join('')}
+            ${md.removedExports.map(e => `<div style="font-size: 10px; color: #fca5a5; font-family: 'JetBrains Mono', monospace;">− ${escapeHtml(e)}</div>`).join('')}
+        </div>
+    ` : '';
+    const secColor = sec.direction === 'WORSENED' ? 'var(--danger)' : sec.direction === 'IMPROVED' ? 'var(--success)' : '#71717a';
+    if (!flagsHtml && !exportsHtml && sec.direction === 'UNCHANGED') {
+        return `<div class="card" style="margin-bottom: 16px;"><div style="font-size: 11px; color: #71717a; text-transform: uppercase; margin-bottom: 4px;">Manifest & Security</div><div style="font-size: 12px; color: var(--success);">✓ No manifest or risk-level changes</div></div>`;
+    }
+    return `
+        <div class="card" style="margin-bottom: 16px;">
+            <div style="font-size: 11px; color: #a1a1aa; text-transform: uppercase; margin-bottom: 10px;">Manifest & Security</div>
+            <div style="font-size: 11px; color: ${secColor}; margin-bottom: 10px;">Risk level: ${escapeHtml(sec.oldRisk)} → ${escapeHtml(sec.newRisk)} (${escapeHtml(sec.direction)})</div>
+            ${flagsHtml}
+            ${exportsHtml}
+        </div>
+    `;
+}
+
+function renderRegPerformance(pd) {
+    if (!pd) return '';
+    if (!pd.available) {
+        return `<div class="card" style="margin-bottom: 16px;"><div style="font-size: 11px; color: #a1a1aa; text-transform: uppercase; margin-bottom: 4px;">Performance Delta</div><div style="font-size: 12px; color: var(--text-muted);">${escapeHtml(pd.reason || 'Unavailable')} — run a Test Session on each version to enable this comparison.</div></div>`;
+    }
+    const fmt = (v, suffix = '') => v == null ? '—' : (typeof v === 'number' ? v.toFixed(1) + suffix : v + suffix);
+    const o = pd.old || {};
+    const n = pd.new || {};
+    return `
+        <div class="card" style="margin-bottom: 16px;">
+            <div style="font-size: 11px; color: #a1a1aa; text-transform: uppercase; margin-bottom: 10px;">Performance Delta (from session history)</div>
+            <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
+                <thead>
+                    <tr style="background: rgba(255,255,255,0.03);">
+                        <th style="padding: 6px; text-align: left; color: #a1a1aa; font-size: 9px; text-transform: uppercase;">Metric</th>
+                        <th style="padding: 6px; text-align: right; color: #a1a1aa; font-size: 9px; text-transform: uppercase;">Old</th>
+                        <th style="padding: 6px; text-align: right; color: #a1a1aa; font-size: 9px; text-transform: uppercase;">New</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td style="padding: 6px; color: #d4d4d8;">Avg FPS</td><td style="padding: 6px; text-align: right; color: #fff;">${fmt(o.avgFps)}</td><td style="padding: 6px; text-align: right; color: ${typeof n.avgFps === 'number' && typeof o.avgFps === 'number' && n.avgFps < o.avgFps - 3 ? 'var(--danger)' : '#fff'};">${fmt(n.avgFps)}</td></tr>
+                    <tr><td style="padding: 6px; color: #d4d4d8;">Min FPS</td><td style="padding: 6px; text-align: right; color: #fff;">${fmt(o.minFps)}</td><td style="padding: 6px; text-align: right; color: #fff;">${fmt(n.minFps)}</td></tr>
+                    <tr><td style="padding: 6px; color: #d4d4d8;">Avg Memory (MB)</td><td style="padding: 6px; text-align: right; color: #fff;">${fmt(o.avgMemoryMb)}</td><td style="padding: 6px; text-align: right; color: #fff;">${fmt(n.avgMemoryMb)}</td></tr>
+                    <tr><td style="padding: 6px; color: #d4d4d8;">Peak Memory (MB)</td><td style="padding: 6px; text-align: right; color: #fff;">${fmt(o.peakMemoryMb)}</td><td style="padding: 6px; text-align: right; color: ${typeof n.peakMemoryMb === 'number' && typeof o.peakMemoryMb === 'number' && n.peakMemoryMb > o.peakMemoryMb + 30 ? 'var(--danger)' : '#fff'};">${fmt(n.peakMemoryMb)}</td></tr>
+                    <tr><td style="padding: 6px; color: #d4d4d8;">Crashes</td><td style="padding: 6px; text-align: right; color: #fff;">${o.crashes ?? 0}</td><td style="padding: 6px; text-align: right; color: ${(n.crashes || 0) > (o.crashes || 0) ? 'var(--danger)' : '#fff'};">${n.crashes ?? 0}</td></tr>
+                    <tr><td style="padding: 6px; color: #d4d4d8;">ANRs</td><td style="padding: 6px; text-align: right; color: #fff;">${o.anrs ?? 0}</td><td style="padding: 6px; text-align: right; color: ${(n.anrs || 0) > (o.anrs || 0) ? 'var(--danger)' : '#fff'};">${n.anrs ?? 0}</td></tr>
+                </tbody>
+            </table>
+            ${pd.issues?.length ? `<div style="margin-top: 10px; padding: 8px; background: rgba(245,158,11,0.06); border-radius: 6px;">${pd.issues.map(i => `<div style="font-size: 11px; color: #fde68a; padding: 2px 0;">⚠ ${escapeHtml(i)}</div>`).join('')}</div>` : ''}
+        </div>
+    `;
+}

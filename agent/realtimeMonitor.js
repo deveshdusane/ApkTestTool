@@ -7,6 +7,7 @@ const fs = require('fs');
 const networkAnalyzer = require('./metrics/networkAnalyzer');
 const memoryAnalyzer = require('./advanced/memoryAnalyzer'); // Keeping this in advanced for now
 const runtimeIntelligence = require('./advanced/runtimeIntelligence');
+const iapValidationEngine = require('./advanced/iapValidationEngine');
 const proxyServer = require('./proxy/proxyServer');
 
 let logcatInterval = null;
@@ -136,6 +137,12 @@ const start = async (packageName, onData, logPath, deviceId = null) => {
             if (runtimeIntelligence) {
                 runtimeIntelligence.reset();
                 runtimeIntelligence.runBinaryScan(packageName, deviceId);
+                // Pre-resolve known SDK hosts (AppsFlyer, Firebase, Crashlytics) so
+                // their short-lived beacons get matched even if reverse-DNS races us.
+                try {
+                    const networkDomainMonitor = require('./metrics/networkDomainMonitor');
+                    networkDomainMonitor.preWarmKnownHosts().catch(() => {});
+                } catch (e) {}
             }
         } catch (e) { }
 
@@ -181,8 +188,10 @@ const fetchAndSend = async (deviceId, pkg, onData) => {
         try {
             if (runtimeIntelligence) {
                 await runtimeIntelligence.updateAppPid(deviceId, pkg);
-                await runtimeIntelligence.updateNetworkAwareness(deviceId, pkg);
+                // Network intelligence collection removed per user request
+                // await runtimeIntelligence.updateNetworkAwareness(deviceId, pkg);
                 await runtimeIntelligence.updateAdsActivation(deviceId);
+                await runtimeIntelligence.updateActivityFlow(deviceId, pkg);
                 await runtimeIntelligence.updateNetworkDetection(deviceId, pkg);
             }
         } catch (err) { }
@@ -204,6 +213,9 @@ const fetchAndSend = async (deviceId, pkg, onData) => {
 
                     if (runtimeIntelligence) {
                         runtimeIntelligence.analyzeLogs(lines, pkg);
+                    }
+                    if (iapValidationEngine && iapValidationEngine.data.isActive) {
+                        iapValidationEngine.analyzeLogs(lines);
                     }
                 }
             }

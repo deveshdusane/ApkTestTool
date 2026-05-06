@@ -8,6 +8,9 @@ const settingsManager = require('../agent/config/settingsManager');
 const aiEventClassifier = require('../agent/advanced/aiEventClassifier');
 const proxyServer = require('../agent/proxy/proxyServer');
 const certManager = require('../agent/proxy/certManager');
+const iapValidationEngine = require('../agent/advanced/iapValidationEngine');
+const blockerAnalyzer = require('../agent/advanced/blockerAnalyzer');
+const buildRegressionComparator = require('../agent/staticAnalyzer/buildRegressionComparator');
 
 const agent = new QAAgent();
 let mainWindow;
@@ -152,7 +155,17 @@ ipcMain.handle('get-session-report', async (event, { projectName, sessionId }) =
 
 ipcMain.handle('get-project-apks', async (event, projectName) => {
     const meta = projectManager.getProjectMetadata(projectName);
-    return meta ? meta.apks : [];
+    if (!meta || !Array.isArray(meta.apks)) return [];
+    const projectPath = projectManager.getProjectPath(projectName);
+    return meta.apks.map(apk => {
+        if (apk && typeof apk === 'object') return apk;
+        const name = String(apk);
+        return {
+            name,
+            path: path.join(projectPath, 'apks', name),
+            packageName: null
+        };
+    });
 });
 
 ipcMain.handle('get-device-info', async () => {
@@ -227,4 +240,40 @@ ipcMain.handle('install-ca-cert', async () => {
     } catch (e) {
         return { success: false, message: e.message };
     }
+});
+
+// ─── IAP VALIDATION IPC HANDLERS ─────────────────────────────────────────────
+
+ipcMain.handle('iap-detect-sdk', async (event, { pkg, deviceId, apkPath }) => {
+    return iapValidationEngine.detectSDK(pkg, deviceId, apkPath);
+});
+
+ipcMain.handle('iap-start-test', async (event, { pkg }) => {
+    return iapValidationEngine.startSession(pkg);
+});
+
+ipcMain.handle('iap-stop-test', async () => {
+    return iapValidationEngine.stopSession();
+});
+
+ipcMain.handle('iap-get-result', async () => {
+    return iapValidationEngine.getResult();
+});
+
+ipcMain.handle('run-blocker-scan', async (event, apkPath) => {
+    return blockerAnalyzer.analyze(apkPath);
+});
+
+ipcMain.handle('select-second-apk', async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+        properties: ['openFile'],
+        filters: [{ name: 'APK Files', extensions: ['apk'] }],
+        title: 'Select APK to compare'
+    });
+    if (canceled) return null;
+    return filePaths[0];
+});
+
+ipcMain.handle('build-regression-compare', async (event, { oldApkPath, newApkPath, projectName }) => {
+    return buildRegressionComparator.compare({ oldApkPath, newApkPath, projectName });
 });

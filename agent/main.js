@@ -109,13 +109,13 @@ class QAAgent {
                     packageName: targetPackage
                 };
                 
-                const installResult = await apkManager.installApk(storedApkPath);
+                const installResult = await apkManager.installApk(storedApkPath, this.activeDeviceId);
                 if (installResult !== true) throw new Error(`Installation failed: ${installResult}`);
             }
 
             // 4. Launch App & Wait for Ready
             logger.logInfo(`Launching App: ${targetPackage}...`);
-            this.launchResult = await apkManager.launchApp(targetPackage);
+            this.launchResult = await apkManager.launchApp(targetPackage, this.activeDeviceId);
             
             // Step 5: Do not fail session on uncertain launch
             if (!this.launchResult) {
@@ -124,11 +124,16 @@ class QAAgent {
 
             // Step 2: Ensure app fully launches before monitoring starts
             logger.logInfo(`Waiting for ${targetPackage} to be ready...`);
+            let appReady = false;
             try {
-                await apkManager.waitForAppReady(targetPackage);
+                await apkManager.waitForAppReady(targetPackage, this.activeDeviceId);
+                appReady = true;
                 logger.logInfo(`App is ready!`);
             } catch (e) {
                 logger.logWarning(`Wait for ready timed out: ${e.message}. Starting monitoring anyway...`);
+            }
+            if (!this.launchResult && !appReady) {
+                throw new Error(`App launch failed for package "${targetPackage}". Check that the APK has a launcher activity and can run on this device.`);
             }
 
             // 5. Initialize session

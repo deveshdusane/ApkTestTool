@@ -57,8 +57,16 @@ class RuntimeIntelligence {
                 appsflyer: false,
                 build_64bit: false,
                 build_release: false,
-                safe_permissions: false
+                safe_permissions: false,
+                no_crashes: true,
+                no_anrs: true,
+                network_active: false,
+                crashlytics_init: false,
+                target_sdk_compliant: false
             },
+            checklistEvidence: {},
+            targetSdk: null,
+            minSdk: null,
             events: [{ name: 'app_started', category: 'SYSTEM', detail: 'Session started', time: 0 }],
             sdkIntelligence: sdkIntelligence.cloneStatic(this.staticSdkIntelligence),
             hasRuntimeData: false
@@ -70,6 +78,7 @@ class RuntimeIntelligence {
         this.activePids = new Set();
         this.sessionStartTime = Date.now();
         this._lastEventTimes = new Map([['app_started', 0]]);
+        this._activityDisplays = [];
         this._lastNetworkScan = 0;
         if (this._eventEngine) this._eventEngine.reset();
         try { networkDomainMonitor.reset(); } catch (e) { }
@@ -124,8 +133,8 @@ class RuntimeIntelligence {
 
             // 2. Ads Intelligence — only fire if the line belongs to the app OR the APK scan
             //    already confirmed an ad SDK is present (guarding against GMS logs for other apps)
-            const adSignals = ['AdRequest', 'AdLoaded', 'AdImpression', 'onAdLoaded', 'onAdShown', 'AdMob', 'UnityAds', 'AudienceNetwork', 'MAX Ad', 'AppLovin', 'IronSource'];
-            const isGmsAdLine = line.includes('com.google.android.gms.ads') || line.includes('com.google.android.gms/ads');
+            const adSignals = ['AdRequest', 'AdLoaded', 'AdImpression', 'onAdLoaded', 'onAdShown', 'AdMob', 'UnityAds', 'AudienceNetwork', 'MAX Ad', 'AppLovin', 'IronSource', 'LevelPlaySDK', 'AppLovinSdk', 'FyberMarketplace', 'Audiomob', 'ISHttpService'];
+            const isGmsAdLine = line.includes('com.google.android.gms.ads') || line.includes('com.google.android.gms/ads') || line.includes('FyberMarketplace') || line.includes('doubleclick.net/mads');
             if (adSignals.some(sig => line.includes(sig)) && (belongsToApp || (isGmsAdLine && this.data.staticAds))) {
                 this.data.ads.status = 'Detected';
                 this.data.ads.usage = 'Active';
@@ -152,15 +161,21 @@ class RuntimeIntelligence {
             }
 
             // 3. Firebase Intelligence
-            const firebaseTags = ['FirebaseApp', 'FA', 'FA-SVC', 'FirebaseAnalytics', 'FA-Event'];
+            const firebaseTags = ['FirebaseApp', 'FA', 'FA-SVC', 'FirebaseAnalytics', 'FA-Event', 'com.google.firebase'];
             const firebaseEvents = ['Logging event', 'Event recorded', 'App measurement initialized'];
+            // Modern Firebase SDKs batch-send via CctTransportBackend — detect by URL
+            const firebaseTransport = line.includes('firebaselogging') || line.includes('firebaselogging-pa.googleapis.com') ||
+                (line.includes('CctTransportBackend') && (line.includes('firebase') || line.includes('firelog')));
             const falseSources = ['GooglePlayServices', 'GmsCore', 'SystemServer', 'AdsService', 'NetworkScheduler'];
 
-            const hasFirebaseTag = firebaseTags.some(tag => line.includes(` ${tag} `) || line.includes(`${tag}:`) || line.includes(`/${tag}`));
+            const hasFirebaseTag = firebaseTags.some(tag =>
+                line.includes(` ${tag} `) || line.includes(`${tag}:`) || line.includes(`/${tag}`) ||
+                (tag.length > 8 && line.includes(tag))
+            );
             const hasFirebaseEvent = firebaseEvents.some(event => line.includes(event));
             const isFalseSource = falseSources.some(source => line.includes(source));
 
-            if (belongsToApp && (hasFirebaseTag || hasFirebaseEvent) && !isFalseSource) {
+            if (belongsToApp && (hasFirebaseTag || hasFirebaseEvent || firebaseTransport) && !isFalseSource) {
                 this.firebaseSignalCount++;
                 if (this.firebaseSignalCount >= 2) {
                     this.data.firebase.status = 'Detected';
@@ -231,30 +246,94 @@ class RuntimeIntelligence {
 
             // 5. QA Checklist Validation Engine & Event Extraction
             if (belongsToApp) {
-                // Game Start Detection
-                if (!this.data.checklist.game_start &&
-                    (line.includes('GameStart') || lowLine.includes('game_start') || lowLine.includes('session_start') ||
-                        line.includes('Application started') || line.includes('UnityMain') || line.includes('Initialized engine') ||
-                        lowLine.includes('level_start') || line.includes('start_session'))) {
-                    this.data.checklist.game_start = true;
+                const setCheck = (key, evidence) => {
+                    if (!this.data.checklist[key]) {
+                        this.data.checklist[key] = true;
+                        this.data.checklistEvidence[key] = { time: eventTime, evidence: (evidence || '').slice(0, 200) };
+                    }
+                };
+
+                // Game Start — must indicate gameplay/engine readiness, not just a level event
+                if (!this.data.checklist.game_start) {
+                    const gameStartPatterns = [
+                        /\bGameStart\b/, /\bgame_start\b/, /\bsession_start\b/,
+                        /Application started/i, /UnityMain/, /Initialized engine/i,
+                        /\bonCreate.*completed\b/i, /\bMainActivity\b.*\bonResume\b/,
+                        /Game (?:engine|session) ready/i
+                    ];
+                    if (gameStartPatterns.some(re => re.test(line))) {
+                        setCheck('game_start', line.trim());
+                    }
                 }
 
-                // Firebase Init Detection
-                if (!this.data.checklist.firebase_init &&
-                    (line.includes('FirebaseApp initialized') || line.includes('App measurement initialized') || line.includes('FA initialized'))) {
-                    this.data.checklist.firebase_init = true;
+                // Firebase Init — only count true initialization signals
+                if (!this.data.checklist.firebase_init) {
+                    const fbInitPatterns = [
+                        /FirebaseApp initialized/, /App measurement initialized/,
+                        /\bFA\b.*initialized/, /Firebase Analytics.*initialized/i,
+                        /FirebaseApp.*registered/, /firebase_id.*generated/i
+                    ];
+                    if (fbInitPatterns.some(re => re.test(line))) {
+                        setCheck('firebase_init', line.trim());
+                    }
                 }
 
-                // AppsFlyer Detection
-                if (!this.data.checklist.appsflyer &&
-                    (line.includes('AppsFlyerLib') || lowLine.includes('af_event') || lowLine.includes('af_start'))) {
-                    this.data.checklist.appsflyer = true;
+                // AppsFlyer — strict signals from AppsFlyer SDK itself
+                if (!this.data.checklist.appsflyer) {
+                    const afPatterns = [
+                        /AppsFlyerLib/, /AppsFlyer.*(?:init|start)/i,
+                        /\baf_event\b/i, /\baf_start\b/i, /\baf_first_open\b/i,
+                        /AFa1[a-z]/, /AppsFlyer_/
+                    ];
+                    if (afPatterns.some(re => re.test(line))) {
+                        setCheck('appsflyer', line.trim());
+                    }
                 }
 
-                // Splash Screen Detection (Log based)
-                if (!this.data.checklist.splash_screen &&
-                    (lowLine.includes('splash') || lowLine.includes('loading') || line.includes('LoadingScreen') || lowLine.includes('scene \'splash\''))) {
-                    this.data.checklist.splash_screen = true;
+                // Crashlytics Init — initialization or first session signal
+                if (!this.data.checklist.crashlytics_init) {
+                    const clPatterns = [
+                        /Crashlytics.*[Ii]nitialized/, /FirebaseCrashlytics.*[Ii]nitialized/,
+                        /Crashlytics report upload/, /Crashlytics SDK started/i,
+                        /Initializing Crashlytics/, /CrashlyticsCore.*started/
+                    ];
+                    if (clPatterns.some(re => re.test(line))) {
+                        setCheck('crashlytics_init', line.trim());
+                    }
+                }
+
+                // Splash Screen — must be early in session and match strict patterns
+                if (!this.data.checklist.splash_screen && eventTime <= 20) {
+                    const splashPatterns = [
+                        /\bSplashActivity\b/, /\bSplashScreen\b/, /\bSplashFragment\b/,
+                        /\bsplash_screen\b/i, /scene[ '"]+splash/i, /\/splash\b/i,
+                        /LoadingScreen/, /\bIntroActivity\b/
+                    ];
+                    if (splashPatterns.some(re => re.test(line))) {
+                        setCheck('splash_screen', line.trim());
+                    }
+                }
+
+                // Crash Detection — FATAL EXCEPTION attributable to this app
+                if (this.data.checklist.no_crashes) {
+                    const isFatal = line.includes('FATAL EXCEPTION') ||
+                        (line.includes('AndroidRuntime') && line.includes('Process:') && packageName && line.includes(packageName)) ||
+                        (line.includes('tombstone') && packageName && line.includes(packageName));
+                    if (isFatal) {
+                        this.data.checklist.no_crashes = false;
+                        this.data.checklistEvidence.no_crashes = { time: eventTime, evidence: line.trim().slice(0, 200) };
+                    }
+                }
+
+                // ANR Detection — application not responding for this app
+                if (this.data.checklist.no_anrs) {
+                    const isAnr = (line.includes('ANR in ') && packageName && line.includes(packageName)) ||
+                        (line.includes('Reason: Input dispatching timed out') && packageName && line.includes(packageName)) ||
+                        line.match(/ANR.*Subject.*Executing service.*[\w.]+/);
+                    if (isAnr) {
+                        this.data.checklist.no_anrs = false;
+                        this.data.checklistEvidence.no_anrs = { time: eventTime, evidence: line.trim().slice(0, 200) };
+                    }
                 }
 
                 // Event Extraction & Timeline Builder (category-aware)
@@ -269,6 +348,30 @@ class RuntimeIntelligence {
                     tlName = 'activity_displayed';
                     tlCategory = 'SYSTEM';
                     tlDetail = actShort;
+
+                    // Fallback: any activity displayed for this package = game launched
+                    if (!this.data.checklist.game_start) {
+                        setCheck('game_start', `Activity displayed: ${actShort}`);
+                    }
+
+                    // Fallback: track activity flow → infer splash from first→second transition
+                    if (!this._activityDisplays) this._activityDisplays = [];
+                    if (!this._activityDisplays.find(a => a.activity === actShort)) {
+                        this._activityDisplays.push({ time: eventTime, activity: actShort });
+                    }
+                    if (!this.data.checklist.splash_screen && this._activityDisplays.length >= 2) {
+                        const first = this._activityDisplays[0];
+                        const second = this._activityDisplays[1];
+                        // Splash heuristic: first activity within 10s, replaced by another within 25s
+                        if (first.time <= 10 && (second.time - first.time) <= 25 && (second.time - first.time) >= 0.5) {
+                            setCheck('splash_screen', `Inferred from activity flow: ${first.activity} → ${second.activity}`);
+                        }
+                    }
+                    // Single-activity splash (Android 12+ theme splash → MainActivity is the only one shown,
+                    // but the activity name itself contains a splash hint we missed)
+                    if (!this.data.checklist.splash_screen && /splash|launch|boot|intro|welcome/i.test(actShort) && eventTime <= 15) {
+                        setCheck('splash_screen', `Activity name match: ${actShort}`);
+                    }
                 }
 
                 // SYSTEM: App process start
@@ -306,6 +409,14 @@ class RuntimeIntelligence {
                     tlName = 'firebase_init';
                     tlCategory = 'FIREBASE';
                     tlDetail = 'Analytics ready';
+                } else if (!tlName && (line.includes('CctTransportBackend') && (line.includes('firebaselogging') || line.includes('firelog')))) {
+                    tlName = 'firebase_batch_send';
+                    tlCategory = 'FIREBASE';
+                    tlDetail = 'Events sent to Firebase';
+                } else if (!tlName && line.includes('firebaselogging-pa.googleapis.com')) {
+                    tlName = 'firebase_batch_send';
+                    tlCategory = 'FIREBASE';
+                    tlDetail = 'Events sent to Firebase';
                 } else if (!tlName && lowLine.includes('session_start')) {
                     tlName = 'session_start';
                     tlCategory = 'FIREBASE';
@@ -318,30 +429,51 @@ class RuntimeIntelligence {
                 }
 
                 // ADS: specific events
+                const adType = () => line.includes('Interstitial') ? 'Interstitial' : line.includes('Banner') ? 'Banner' : line.includes('Rewarded') ? 'Rewarded' : 'Ad';
                 if (!tlName && (line.includes('AdRequest') || lowLine.includes('ad_request'))) {
-                    const adType = line.includes('Interstitial') ? 'Interstitial' : line.includes('Banner') ? 'Banner' : line.includes('Rewarded') ? 'Rewarded' : 'Ad';
                     tlName = 'ad_request';
                     tlCategory = 'ADS';
-                    tlDetail = `${adType} requested`;
+                    tlDetail = `${adType()} requested`;
                 } else if (!tlName && (line.includes('AdLoaded') || line.includes('onAdLoaded'))) {
-                    const adType = line.includes('Interstitial') ? 'Interstitial' : line.includes('Banner') ? 'Banner' : line.includes('Rewarded') ? 'Rewarded' : 'Ad';
                     tlName = 'ad_loaded';
                     tlCategory = 'ADS';
-                    tlDetail = `${adType} loaded`;
+                    tlDetail = `${adType()} loaded`;
                 } else if (!tlName && (line.includes('AdImpression') || lowLine.includes('ad_impression') || line.includes('onAdShown'))) {
-                    const adType = line.includes('Interstitial') ? 'Interstitial' : line.includes('Banner') ? 'Banner' : line.includes('Rewarded') ? 'Rewarded' : 'Ad';
                     tlName = 'ad_impression';
                     tlCategory = 'ADS';
-                    tlDetail = `${adType} shown`;
+                    tlDetail = `${adType()} shown`;
+                } else if (!tlName && (line.includes('onAdFailedToLoad') || line.includes('AdFailedToLoad') || lowLine.includes('ad_failed') || lowLine.includes('no fill'))) {
+                    tlName = 'ad_failed';
+                    tlCategory = 'ADS';
+                    tlDetail = `${adType()} failed`;
+                } else if (!tlName && (line.includes('LevelPlaySDK') && line.includes('ADAPTER_CALLBACK'))) {
+                    const cbMatch = line.match(/ADAPTER_CALLBACK:\s*(.{0,60})/);
+                    tlName = 'levelplay_callback';
+                    tlCategory = 'ADS';
+                    tlDetail = cbMatch ? cbMatch[1].trim() : 'LevelPlay callback';
+                } else if (!tlName && (line.includes('AppLovinSdk') || (line.includes('AppLovin') && line.includes('initialized')))) {
+                    tlName = 'applovin_init';
+                    tlCategory = 'ADS';
+                    tlDetail = 'AppLovin MAX ready';
+                } else if (!tlName && line.includes('ISHttpService') && lowLine.includes('failed')) {
+                    tlName = 'ad_network_failed';
+                    tlCategory = 'ADS';
+                    tlDetail = 'Ad network request failed';
                 }
 
                 if (tlName && tlCategory) {
                     // O(1) dedup: same event name not seen within last 2 seconds
                     const lastTime = this._lastEventTimes.get(tlName);
                     if (lastTime === undefined || (eventTime - lastTime) > 2.0) {
-                        this._lastEventTimes.set(tlName, eventTime);
-                        this.data.events.push({ name: tlName, category: tlCategory, detail: tlDetail, time: eventTime });
-                        if (this.data.events.length > 300) this.data.events.shift();
+                        // Per-category soft cap — prevent GA from pushing all other categories out
+                        const tlCaps = { GA: 150, ADS: 80, FIREBASE: 40, FACEBOOK: 20, LIFECYCLE: 20, SYSTEM: 20, IAP: 20, APPSFLYER: 20, ADJUST: 20 };
+                        const tlCap = tlCaps[tlCategory] || 30;
+                        const tlCatCount = this.data.events.filter(e => e.category === tlCategory).length;
+                        if (tlCatCount < tlCap) {
+                            this._lastEventTimes.set(tlName, eventTime);
+                            this.data.events.push({ name: tlName, category: tlCategory, detail: tlDetail, time: eventTime });
+                            if (this.data.events.length > 400) this.data.events.shift();
+                        }
                     }
                 }
 
@@ -538,20 +670,68 @@ class RuntimeIntelligence {
             // Dumpsys Package Analysis (For Debug & Permissions)
             const dumpOut = await adbHelper.runADB(['-s', deviceId, 'shell', 'dumpsys', 'package', packageName]);
             if (dumpOut) {
-                // Verify Release Build (No DEBUGGABLE flag)
-                this.data.checklist.build_release = !dumpOut.includes('DEBUGGABLE');
+                // Release Build — check pkgFlags line specifically (not raw substring)
+                const pkgFlagsMatch = dumpOut.match(/pkgFlags=\[\s*([^\]]*)\]/);
+                if (pkgFlagsMatch) {
+                    const flags = pkgFlagsMatch[1];
+                    this.data.checklist.build_release = !/\bDEBUGGABLE\b/.test(flags);
+                } else {
+                    // Fallback: legacy 'flags=' line
+                    const legacyFlags = dumpOut.match(/^\s*flags=\[\s*([^\]]*)\]/m);
+                    this.data.checklist.build_release = legacyFlags
+                        ? !/\bDEBUGGABLE\b/.test(legacyFlags[1])
+                        : !dumpOut.includes('ApplicationInfo flags=0x') ||
+                          !/ApplicationInfo flags=0x[0-9a-f]*[2367abef]/.test(dumpOut);
+                }
 
-                // Verify Safe Permissions
+                // targetSdk / minSdk extraction
+                const targetSdkMatch = dumpOut.match(/targetSdk[Vv]ersion?=(\d+)/) || dumpOut.match(/targetSdk=(\d+)/);
+                const minSdkMatch = dumpOut.match(/minSdk[Vv]ersion?=(\d+)/) || dumpOut.match(/minSdk=(\d+)/);
+                if (targetSdkMatch) this.data.targetSdk = parseInt(targetSdkMatch[1]);
+                if (minSdkMatch) this.data.minSdk = parseInt(minSdkMatch[1]);
+                // Play Store 2024+ requires targetSdk >= 33; 2025+ requires >= 34
+                this.data.checklist.target_sdk_compliant = this.data.targetSdk !== null && this.data.targetSdk >= 33;
+
+                // Safe Permissions — comprehensive Play Store dangerous-permission list
                 const dangerousPerms = [
-                    'android.permission.READ_CONTACTS',
+                    // Location
                     'android.permission.ACCESS_FINE_LOCATION',
+                    'android.permission.ACCESS_COARSE_LOCATION',
+                    'android.permission.ACCESS_BACKGROUND_LOCATION',
+                    // Contacts / Calendar
+                    'android.permission.READ_CONTACTS',
+                    'android.permission.WRITE_CONTACTS',
+                    'android.permission.READ_CALENDAR',
+                    'android.permission.WRITE_CALENDAR',
+                    // SMS / Calls
                     'android.permission.READ_SMS',
+                    'android.permission.SEND_SMS',
+                    'android.permission.RECEIVE_SMS',
+                    'android.permission.READ_CALL_LOG',
+                    'android.permission.WRITE_CALL_LOG',
+                    'android.permission.CALL_PHONE',
+                    'android.permission.READ_PHONE_STATE',
+                    'android.permission.READ_PHONE_NUMBERS',
+                    // Sensors / media
                     'android.permission.CAMERA',
                     'android.permission.RECORD_AUDIO',
-                    'android.permission.CALL_PHONE'
+                    'android.permission.BODY_SENSORS',
+                    'android.permission.ACCESS_MEDIA_LOCATION',
+                    // Storage (legacy + scoped)
+                    'android.permission.READ_EXTERNAL_STORAGE',
+                    'android.permission.WRITE_EXTERNAL_STORAGE',
+                    'android.permission.MANAGE_EXTERNAL_STORAGE'
                 ];
-                const hasDangerous = dangerousPerms.some(perm => dumpOut.includes(`${perm}: granted=true`));
-                this.data.checklist.safe_permissions = !hasDangerous;
+                const grantedDangerous = dangerousPerms.filter(perm => {
+                    const re = new RegExp(`${perm.replace(/\./g, '\\.')}:\\s*granted=true`);
+                    return re.test(dumpOut);
+                });
+                this.data.checklist.safe_permissions = grantedDangerous.length === 0;
+                if (grantedDangerous.length > 0) {
+                    this.data.checklistEvidence.safe_permissions = {
+                        evidence: `Granted: ${grantedDangerous.map(p => p.split('.').pop()).join(', ')}`
+                    };
+                }
             }
 
         } catch (err) {
@@ -629,10 +809,78 @@ class RuntimeIntelligence {
         } catch (e) { }
     }
 
+    /**
+     * Polls dumpsys activity for the resumed activity of the package.
+     * Bypasses logcat --pid filter, which strips ActivityManager lines.
+     * Drives game_start + splash_screen checklist items.
+     */
+    async updateActivityFlow(deviceId, packageName) {
+        if (!deviceId || !packageName) return;
+        try {
+            const out = await adbHelper.runADB(['-s', deviceId, 'shell', 'dumpsys', 'activity', 'activities']);
+            if (!out) return;
+
+            // Match either `mResumedActivity` or `topResumedActivity` lines
+            // Format: ActivityRecord{token user com.pkg/.Activity taskId}
+            const re = /(?:mResumedActivity|topResumedActivity|mFocusedActivity)[:=][^\n]*?ActivityRecord\{[^}]*?\s([\w.]+)\/([\w.$]+)/g;
+            let m;
+            const seenThisScan = new Set();
+            while ((m = re.exec(out)) !== null) {
+                if (m[1] !== packageName) continue;
+                const actShort = m[2].split('.').pop();
+                if (seenThisScan.has(actShort)) continue;
+                seenThisScan.add(actShort);
+
+                if (!this._activityDisplays) this._activityDisplays = [];
+                if (this._activityDisplays.find(a => a.activity === actShort)) continue;
+
+                const eventTime = parseFloat(((Date.now() - this.sessionStartTime) / 1000).toFixed(1));
+                this._activityDisplays.push({ time: eventTime, activity: actShort });
+
+                const setCheck = (key, evidence) => {
+                    if (!this.data.checklist[key]) {
+                        this.data.checklist[key] = true;
+                        this.data.checklistEvidence[key] = { time: eventTime, evidence: evidence.slice(0, 200) };
+                    }
+                };
+
+                if (!this.data.checklist.game_start) {
+                    setCheck('game_start', `Resumed activity: ${actShort}`);
+                }
+
+                if (!this.data.checklist.splash_screen) {
+                    if (/splash|launch|boot|intro|welcome/i.test(actShort) && eventTime <= 15) {
+                        setCheck('splash_screen', `Activity name: ${actShort}`);
+                    } else if (this._activityDisplays.length >= 2) {
+                        const first = this._activityDisplays[0];
+                        const second = this._activityDisplays[1];
+                        const gap = second.time - first.time;
+                        if (first.time <= 10 && gap <= 25 && gap >= 0.5) {
+                            setCheck('splash_screen', `Activity flow: ${first.activity} → ${second.activity}`);
+                        }
+                    }
+                }
+
+                // Push timeline event so the user sees activity transitions live
+                const lastTime = this._lastEventTimes.get(`act_${actShort}`);
+                if (lastTime === undefined) {
+                    this._lastEventTimes.set(`act_${actShort}`, eventTime);
+                    this.data.events.push({
+                        name: 'activity_displayed',
+                        category: 'SYSTEM',
+                        detail: actShort,
+                        time: eventTime
+                    });
+                    if (this.data.events.length > 400) this.data.events.shift();
+                }
+            }
+        } catch (e) { }
+    }
+
     async updateNetworkDetection(deviceId, packageName) {
         if (!deviceId || !packageName) return;
         const now = Date.now();
-        if (now - this._lastNetworkScan < 10000) return; // run every 10s
+        if (now - this._lastNetworkScan < 3000) return; // run every 3s — short-lived beacons (AppsFlyer, etc) often last <1s
         this._lastNetworkScan = now;
 
         try {
@@ -647,6 +895,25 @@ class RuntimeIntelligence {
                         source: 'network',
                         message: `Connected to ${det.hostname}`
                     });
+                }
+
+                // Checklist fallback: silent SDKs (release builds with logging stripped)
+                // confirm via network beacon + static APK presence.
+                const sdks = this.data.sdkIntelligence?.sdks || {};
+                if (det.sdkId === 'appsflyer' && !this.data.checklist.appsflyer && sdks.appsflyer?.detected) {
+                    this.data.checklist.appsflyer = true;
+                    this.data.checklistEvidence.appsflyer = { time: eventTime, evidence: `Network beacon to ${det.hostname}` };
+                }
+                if (det.sdkId === 'crashlytics' && !this.data.checklist.crashlytics_init && sdks.crashlytics?.detected) {
+                    this.data.checklist.crashlytics_init = true;
+                    this.data.checklistEvidence.crashlytics_init = { time: eventTime, evidence: `Network beacon to ${det.hostname}` };
+                }
+                if ((det.sdkId === 'firebase_analytics' || det.sdkId === 'firebase') && !this.data.checklist.firebase_init) {
+                    const fb = sdks.firebase_analytics || sdks.firebase;
+                    if (fb?.detected) {
+                        this.data.checklist.firebase_init = true;
+                        this.data.checklistEvidence.firebase_init = { time: eventTime, evidence: `Network beacon to ${det.hostname}` };
+                    }
                 }
 
                 // Push one timeline event per SDK per session (isNew guard)
@@ -806,6 +1073,25 @@ class RuntimeIntelligence {
 
         // Finalize Ads SDK checklist
         this.data.checklist.ads_sdk = this.data.ads.status === 'Detected';
+
+        // Cross-check with sdkIntelligence for accurate runtime activity
+        const sdks = this.data.sdkIntelligence?.sdks || {};
+        if (!this.data.checklist.firebase_init) {
+            const fb = sdks.firebase_analytics || sdks.firebase;
+            if (fb?.active || (fb?.detected && this.data.firebase.count > 0)) {
+                this.data.checklist.firebase_init = true;
+            }
+        }
+        if (!this.data.checklist.appsflyer && sdks.appsflyer?.active) {
+            this.data.checklist.appsflyer = true;
+        }
+        if (!this.data.checklist.crashlytics_init && sdks.crashlytics?.active) {
+            this.data.checklist.crashlytics_init = true;
+        }
+
+        // Network activity — true if any traffic observed
+        this.data.checklist.network_active = (this.data.networkCalls > 0) ||
+            (this.data.networkIntel?.dataUsedMB > 0);
 
         return {
             ...this.data,

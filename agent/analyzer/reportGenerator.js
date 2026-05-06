@@ -7,7 +7,7 @@
 const logger      = require('../utils/logger');
 const bugReporter = require('./bugReporter');
 const insightEngine = require('./insightEngine');
-const networkAnalyzer = require('../metrics/networkAnalyzer');
+
 
 // ── SDK event → QA checklist mapping ─────────────────────────────────────────
 /**
@@ -159,7 +159,7 @@ const generateReport = (analysis, launchSuccessful, duration, performanceData = 
             }
         },
         runtimeIntelligence: advancedAuditData?.runtime || null,
-        network: networkAnalyzer.generateNetworkReport()
+
     };
 
     reportData.aiInsights = insightEngine.generateInsights(reportData);

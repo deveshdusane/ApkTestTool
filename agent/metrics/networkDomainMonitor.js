@@ -26,6 +26,28 @@ class NetworkDomainMonitor {
         this.dnsCache    = new Map(); // ip → hostname | null
         this.detectedIds = new Set(); // sdkIds already reported this session
         this.cachedUid   = null;
+        this._prewarmed  = false;
+    }
+
+    /**
+     * Pre-resolve known SDK hosts so short-lived beacons (AppsFlyer first-open,
+     * Firebase, Crashlytics) get matched even if reverse-DNS fails mid-flight.
+     */
+    async preWarmKnownHosts() {
+        if (this._prewarmed) return;
+        this._prewarmed = true;
+        const hosts = [
+            'app.appsflyer.com', 'events.appsflyer.com', 'launches.appsflyer.com', 'register.appsflyer.com',
+            'app-measurement.com', 'firebaselogging-pa.googleapis.com',
+            'firebasecrashlytics.googleapis.com', 'crashlyticsreports-pa.googleapis.com',
+            'firebaseinstallations.googleapis.com'
+        ];
+        await Promise.allSettled(hosts.map(async (host) => {
+            try {
+                const ips = await dns.resolve4(host);
+                for (const ip of ips) this.dnsCache.set(ip, host);
+            } catch (e) {}
+        }));
     }
 
     async getAppUid(deviceId, packageName) {
@@ -87,13 +109,16 @@ class NetworkDomainMonitor {
 
     async _readEstablishedIPs(deviceId, uid) {
         const ips = new Set();
+        // Accept ESTABLISHED + recently-closed states so we catch short-lived beacons
+        // 01=ESTABLISHED, 04=FIN_WAIT1, 05=FIN_WAIT2, 06=TIME_WAIT, 08=CLOSE_WAIT, 09=LAST_ACK
+        const acceptedStates = new Set(['01', '04', '05', '06', '08', '09']);
         for (const proto of ['tcp', 'tcp6']) {
             try {
                 const content = await adbHelper.runADB(['-s', deviceId, 'shell', 'cat', `/proc/net/${proto}`]);
                 for (const line of (content || '').split('\n').slice(1)) {
                     const parts = line.trim().split(/\s+/);
                     if (parts.length < 8) continue;
-                    if (parts[3] !== '01') continue; // 01 = ESTABLISHED
+                    if (!acceptedStates.has(parts[3])) continue;
                     if (parts[7] !== uid) continue;  // filter by app UID
                     const ip = proto === 'tcp' ? this._parseIPv4(parts[2]) : this._parseIPv6(parts[2]);
                     if (this._isPublicIP(ip)) ips.add(ip);

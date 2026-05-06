@@ -12,7 +12,7 @@ const AppInfoParser = require('app-info-parser');
  * @param {string} apkPath Path to the APK file.
  * @returns {Promise<boolean|string>} Returns true on success, or an error message on failure.
  */
-const installApk = async (apkPath) => {
+const installApk = async (apkPath, deviceId = null) => {
     try {
         // Validation: Check if apkPath is provided
         if (!apkPath) {
@@ -20,7 +20,8 @@ const installApk = async (apkPath) => {
         }
 
         // Step 2 & 3: Use -r flag for faster reinstall and a 60s timeout for large APKs
-        const output = await adbHelper.runADB(['install', '-r', apkPath], { timeout: 60000 });
+        const targetArgs = deviceId ? ['-s', deviceId] : [];
+        const output = await adbHelper.runADB([...targetArgs, 'install', '-r', apkPath], { timeout: 60000 });
         
         if (output.includes('Success')) {
             return true;
@@ -46,15 +47,16 @@ const installApk = async (apkPath) => {
  * @param {string} packageName Package name of the app (e.g., com.example.game).
  * @returns {Promise<boolean>}
  */
-const launchApp = async (packageName) => {
+const launchApp = async (packageName, deviceId = null) => {
     try {
         if (!packageName) {
             throw new Error('Package name not provided in config');
         }
 
-        // Using monkey command to launch the app as a launcher category
-        await adbHelper.runADB(['shell', 'monkey', '-p', packageName, '-c', 'android.intent.category.LAUNCHER', '1']);
-        return true;
+        const targetArgs = deviceId ? ['-s', deviceId] : [];
+        const output = await adbHelper.runADB([...targetArgs, 'shell', 'monkey', '-p', packageName, '-c', 'android.intent.category.LAUNCHER', '1']);
+        if (!output || /Error|No activities found|monkey aborted/i.test(output)) return false;
+        return /Events injected:\s*1/i.test(output);
     } catch (err) {
         return false;
     }
@@ -80,12 +82,13 @@ const getPackageInfo = async (apkPath) => {
  * @param {string} packageName 
  * @returns {Promise<void>}
  */
-const waitForAppReady = (packageName) => {
+const waitForAppReady = (packageName, deviceId = null) => {
     return new Promise((resolve, reject) => {
         let attempts = 0;
         const interval = setInterval(async () => {
             try {
-                const output = await adbHelper.runADB(['shell', 'pidof', packageName]);
+                const targetArgs = deviceId ? ['-s', deviceId] : [];
+                const output = await adbHelper.runADB([...targetArgs, 'shell', 'pidof', packageName]);
                 if (output && output.trim() !== '') {
                     clearInterval(interval);
                     resolve();

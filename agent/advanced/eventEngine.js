@@ -34,6 +34,14 @@ class EventEngine {
         this._lastEventTimes = new Map();
         this.counts = {};
         this.sessionStartTime = Date.now();
+        this._categoryCounts = {};
+    }
+
+    // Per-category soft cap so GA can't crowd out Firebase/Ads/Lifecycle/System
+    _categoryFull(category) {
+        const caps = { GA: 150, ADS: 80, FIREBASE: 40, FACEBOOK: 20, IAP: 20, APPSFLYER: 20, ADJUST: 20, LIFECYCLE: 20, SYSTEM: 20 };
+        const cap = caps[category] || 30;
+        return (this._categoryCounts[category] || 0) >= cap;
     }
 
     /**
@@ -91,8 +99,9 @@ class EventEngine {
         // ── Facebook SDK ──────────────────────────────────────────────────────
         // "[FB] LogAppEvent called: fb_mobile_purchase"
         // "FacebookSDK: logEvent fb_app_install"
+        // "com.facebook.UserSettingsManager: ..."
         if (!name) {
-            const fbSDK = line.match(/(?:\[FB\]|FacebookSDK|FBSDKCoreKit|FBTRACE).*?(?:LogAppEvent|logEvent|logPurchase).*?(?:called:?\s*|name=)\s*([a-zA-Z_][a-zA-Z0-9_]+)/i);
+            const fbSDK = line.match(/(?:\[FB\]|FacebookSDK|FBSDKCoreKit|FBTRACE|com\.facebook\.).*?(?:LogAppEvent|logEvent|logPurchase).*?(?:called:?\s*|name=)\s*([a-zA-Z_][a-zA-Z0-9_]+)/i);
             if (fbSDK) {
                 name = fbSDK[1];
                 category = 'FACEBOOK';
@@ -100,12 +109,21 @@ class EventEngine {
             }
         }
         // Fallback: any line with "fb_" event name pattern from FB tags
-        if (!name && (line.includes('[FB]') || line.includes('FacebookSDK'))) {
+        if (!name && (line.includes('[FB]') || line.includes('FacebookSDK') || line.includes('com.facebook.'))) {
             const fbFallback = line.match(/(fb_[a-zA-Z_][a-zA-Z0-9_]+)/i);
             if (fbFallback) {
                 name = fbFallback[1];
                 category = 'FACEBOOK';
                 detail = fbFallback[1];
+            }
+        }
+        // Facebook SDK init/warning — catch package-based log entries
+        if (!name && line.includes('com.facebook.') && !line.includes('com.facebook.katana')) {
+            const fbPkg = line.match(/com\.facebook\.([A-Za-z]+)/);
+            if (fbPkg) {
+                name = 'facebook_sdk_active';
+                category = 'FACEBOOK';
+                detail = `Facebook SDK: ${fbPkg[1]}`;
             }
         }
 
@@ -172,9 +190,8 @@ class EventEngine {
             detail = 'SDK ready';
         }
 
-        // ── Unity Scene Lifecycle ─────────────────────────────────────────────
-        // "SceneManager: Loading scene 'Gameplay'"
-        // "UnityPlayer: Changing scene to Level_1"
+        // ── Lifecycle ─────────────────────────────────────────────────────────
+        // Unity scene changes: "SceneManager: Loading scene 'Gameplay'"
         if (!name) {
             const sceneLoad = line.match(/(?:SceneManager|UnityPlayer|Unity).*?(?:Loading|Changing|Loaded) scene[: '"]+([A-Za-z0-9_\- ]+)/i);
             if (sceneLoad) {
@@ -184,6 +201,36 @@ class EventEngine {
                 detail = `Scene: ${sn}`;
             }
         }
+        // Activity lifecycle from ActivityManager/ActivityTaskManager
+        if (!name && (line.includes('ActivityManager:') || line.includes('ActivityTaskManager:'))) {
+            if (line.includes('Displayed') && packageName && line.includes(packageName)) {
+                const actMatch = line.match(/Displayed\s+[\w.]+\/([\w.]+)/);
+                const actShort = actMatch ? actMatch[1].split('.').pop() : 'Activity';
+                name = 'activity_displayed';
+                category = 'LIFECYCLE';
+                detail = actShort;
+            } else if (line.includes('START') && packageName && line.includes(packageName)) {
+                name = 'activity_start';
+                category = 'LIFECYCLE';
+                detail = 'Activity starting';
+            } else if (line.includes('STOP') && packageName && line.includes(packageName)) {
+                name = 'activity_stop';
+                category = 'LIFECYCLE';
+                detail = 'Activity stopped';
+            }
+        }
+        // App process start
+        if (!name && line.includes('Start proc') && packageName && line.includes(packageName)) {
+            name = 'app_process_start';
+            category = 'LIFECYCLE';
+            detail = 'App process launched';
+        }
+        // App crash / ANR lifecycle
+        if (!name && packageName && line.includes(packageName) && (line.includes('FATAL EXCEPTION') || line.includes('ANR in'))) {
+            name = line.includes('ANR') ? 'anr_detected' : 'fatal_crash';
+            category = 'LIFECYCLE';
+            detail = line.includes('ANR') ? 'ANR detected' : 'Fatal exception';
+        }
 
         if (!name || !category) return null;
 
@@ -191,12 +238,19 @@ class EventEngine {
         const lastTime = this._lastEventTimes.get(name);
         if (lastTime !== undefined && (eventTime - lastTime) <= 2.0) return null;
 
+        // Per-category cap: prevent one category (e.g. GA) from filling the entire buffer
+        if (this._categoryFull(category)) return null;
+
         this._lastEventTimes.set(name, eventTime);
         this.counts[category] = (this.counts[category] || 0) + 1;
+        this._categoryCounts[category] = (this._categoryCounts[category] || 0) + 1;
 
-        const ev = { name, category, detail, time: eventTime };
+        // Preserve the original logcat line (truncated) so the UI can show users the
+        // exact source line that triggered detection — needed for verification/debugging.
+        const rawLine = line.length > 400 ? line.slice(0, 400) + '…' : line;
+        const ev = { name, category, detail, time: eventTime, raw: rawLine };
         this.events.push(ev);
-        if (this.events.length > 300) this.events.shift();
+        if (this.events.length > 400) this.events.shift();
 
         return ev;
     }

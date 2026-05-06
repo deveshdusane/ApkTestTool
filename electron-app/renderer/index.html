@@ -55,10 +55,13 @@
                 <button class="nav-item active" data-tab="test" id="nav-test">🧪 Test Session</button>
                 <button class="nav-item" data-tab="runtime" id="nav-runtime">🧠 Runtime Intel</button>
                 <button class="nav-item" data-tab="events" id="nav-events">🕒 Runtime Events</button>
-                <button class="nav-item" data-tab="report" id="nav-report">📊 QA Report</button>
+                <button class="nav-item" data-tab="iap" id="nav-iap">🛒 IAP Validation</button>
+                <button class="nav-item" data-tab="blockers" id="nav-blockers">🚨 Game Blockers</button>
+                <button class="nav-item" data-tab="regression" id="nav-regression">🔬 Build Regression</button>
                 <button class="nav-item" data-tab="static" id="nav-static">📁 Static Analysis</button>
                 <button class="nav-item" data-tab="prediction" id="nav-prediction">🔮 Device Prediction</button>
                 <button class="nav-item" data-tab="history" id="nav-history">📂 History</button>
+
             </nav>
 
             <div class="sidebar-footer">
@@ -501,9 +504,19 @@
                                     <span style="font-size: 13px; color: #e4e4e7;">64-Bit Play Store Ready</span>
                                     <span id="qa-build-64bit" style="font-size: 13px;">❌</span>
                                 </div>
-                                <div style="display: flex; justify-content: space-between; padding: 6px 0;">
+                                <div
+                                    style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">
                                     <span style="font-size: 13px; color: #e4e4e7;">Release Build Integrity</span>
                                     <span id="qa-build-release" style="font-size: 13px;">❌</span>
+                                </div>
+                                <div
+                                    style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                    <span style="font-size: 13px; color: #e4e4e7;" title="Play Store requires targetSdk ≥ 33">Target SDK Compliant <span id="qa-target-sdk-detail" style="color:#71717a;font-size:11px;"></span></span>
+                                    <span id="qa-target-sdk-compliant" style="font-size: 13px;">❌</span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; padding: 6px 0;">
+                                    <span style="font-size: 13px; color: #e4e4e7;">No Crashes</span>
+                                    <span id="qa-no-crashes" style="font-size: 13px;">❌</span>
                                 </div>
                             </div>
                             <div>
@@ -522,9 +535,24 @@
                                     <span style="font-size: 13px; color: #e4e4e7;">AppsFlyer Init</span>
                                     <span id="qa-appsflyer" style="font-size: 13px;">❌</span>
                                 </div>
-                                <div style="display: flex; justify-content: space-between; padding: 6px 0;">
+                                <div
+                                    style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                    <span style="font-size: 13px; color: #e4e4e7;">Crashlytics Init</span>
+                                    <span id="qa-crashlytics-init" style="font-size: 13px;">❌</span>
+                                </div>
+                                <div
+                                    style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">
                                     <span style="font-size: 13px; color: #e4e4e7;">Permissions Security</span>
                                     <span id="qa-safe-permissions" style="font-size: 13px;">❌</span>
+                                </div>
+                                <div
+                                    style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                    <span style="font-size: 13px; color: #e4e4e7;">No ANRs</span>
+                                    <span id="qa-no-anrs" style="font-size: 13px;">❌</span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; padding: 6px 0;">
+                                    <span style="font-size: 13px; color: #e4e4e7;">Network Activity</span>
+                                    <span id="qa-network-active" style="font-size: 13px;">❌</span>
                                 </div>
                             </div>
                         </div>
@@ -532,33 +560,7 @@
 
 
 
-                    <div class="card"
-                        style="padding: 20px; margin-bottom: 24px; border-left: 4px solid #e879f9; background: rgba(232, 121, 249, 0.05);">
-                        <div style="font-size: 11px; text-transform: uppercase; color: #a1a1aa; margin-bottom: 12px;">🌐
-                            Network Intelligence</div>
-                        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px;">
-                            <div>
-                                <div style="font-size: 10px; color: #a1a1aa;">Avg Ping</div>
-                                <div id="runtime-avg-ping" style="font-size: 18px; font-weight: bold; color: #60a5fa;">
-                                    -- ms</div>
-                            </div>
-                            <div>
-                                <div style="font-size: 10px; color: #a1a1aa;">Data Used</div>
-                                <div id="runtime-data-used" style="font-size: 18px; font-weight: bold; color: #e879f9;">
-                                    -- MB</div>
-                            </div>
-                            <div>
-                                <div style="font-size: 10px; color: #a1a1aa;">Disconnects</div>
-                                <div id="runtime-disconnects"
-                                    style="font-size: 18px; font-weight: bold; color: #fb7185;">--</div>
-                            </div>
-                            <div>
-                                <div style="font-size: 10px; color: #a1a1aa;">Status</div>
-                                <div id="runtime-network-status"
-                                    style="font-size: 18px; font-weight: bold; color: #2dd4bf;">STABLE</div>
-                            </div>
-                        </div>
-                    </div>
+
 
                     <div class="card" style="padding: 20px;">
                         <div style="font-size: 11px; text-transform: uppercase; color: #a1a1aa; margin-bottom: 12px;">
@@ -647,21 +649,217 @@
                 </div>
             </section>
 
-            <!-- ── TAB: QA REPORT ─────────────────────────── -->
-            <section class="tab-panel" id="tab-report">
+
+
+            <!-- ── TAB: IAP VALIDATION ────────────────────── -->
+            <section class="tab-panel" id="tab-iap">
                 <div class="page-header">
-                    <h1>QA Evaluation Report</h1>
-                    <p class="page-sub">Comprehensive quality audit for the latest test session.</p>
+                    <h1>IAP Validation Engine</h1>
+                    <p class="page-sub">Assisted Mode: Real-time purchase flow verification using system signals.</p>
                 </div>
 
-                <div id="report-empty-state" class="empty-project-state" style="padding: 40px; text-align: center;">
-                    <div style="font-size: 48px; margin-bottom: 15px;">📊</div>
-                    <h3>No Report Available</h3>
-                    <p style="color: #a1a1aa;">Complete a test session and click 'Generate Report' to view results here.
-                    </p>
+                <div id="iap-empty-state" class="empty-project-state">
+                    <div style="font-size: 48px; margin-bottom: 15px;">🛒</div>
+                    <h3>Start IAP Test Mode</h3>
+                    <p style="color: #a1a1aa; max-width: 400px; margin: 0 auto 20px;">Deploy an APK and perform a manual purchase on the device. TestMate will monitor the system signals for verification.</p>
+                    <button id="iap-start-btn" class="btn primary">Start IAP Test</button>
                 </div>
 
-                <div id="report-container" class="card report-panel hidden"></div>
+                <div id="iap-content" class="hidden">
+                    <div class="card" style="margin-bottom: 18px; border-left: 4px solid var(--primary);">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap;">
+                            <div>
+                                <div style="font-size: 11px; color: #a1a1aa; text-transform: uppercase; margin-bottom: 4px;">Detected System</div>
+                                <div id="iap-system-name" style="font-size: 18px; font-weight: bold; color: #fff;">Searching...</div>
+                                <div id="iap-library-version" style="font-size: 11px; color: var(--secondary); margin-top: 3px; display: none;"></div>
+                            </div>
+                            <div style="text-align: right;">
+                                <div style="font-size: 11px; color: #a1a1aa; text-transform: uppercase; margin-bottom: 4px;">Current Status</div>
+                                <div id="iap-status-badge" class="badge warning" style="font-size: 14px; padding: 6px 16px;">INCOMPLETE</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Lifecycle verification — the new core deliverable -->
+                    <div class="card" style="margin-bottom: 18px;">
+                        <div style="font-size: 12px; text-transform: uppercase; color: #a1a1aa; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center;">
+                            <span>🔄 Purchase Lifecycle Verification</span>
+                            <span style="font-size: 9px; color: #71717a; text-transform: none;">Real-time · log-pattern based · no AI</span>
+                        </div>
+                        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;">
+                            <div id="iap-step-initiate" class="iap-lc-step">
+                                <div class="lc-icon">1</div>
+                                <div class="lc-label">Purchase Initiated</div>
+                                <div class="lc-state">—</div>
+                            </div>
+                            <div id="iap-step-resolve" class="iap-lc-step">
+                                <div class="lc-icon">2</div>
+                                <div class="lc-label">Purchase Resolved</div>
+                                <div class="lc-state">—</div>
+                            </div>
+                            <div id="iap-step-acknowledge" class="iap-lc-step">
+                                <div class="lc-icon">3a</div>
+                                <div class="lc-label">Acknowledge<small>(non-consumables)</small></div>
+                                <div class="lc-state">—</div>
+                            </div>
+                            <div id="iap-step-consume" class="iap-lc-step">
+                                <div class="lc-icon">3b</div>
+                                <div class="lc-label">Consume<small>(consumables)</small></div>
+                                <div class="lc-state">—</div>
+                            </div>
+                        </div>
+                        <div id="iap-lc-verdict" style="margin-top: 12px; padding: 8px 12px; border-radius: 6px; font-size: 11px; line-height: 1.5; display: none;"></div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1.5fr 1fr; gap: 24px;">
+                        <!-- Timeline Section -->
+                        <div class="card">
+                            <div style="font-size: 12px; text-transform: uppercase; color: #a1a1aa; margin-bottom: 16px; display: flex; justify-content: space-between;">
+                                <span>Verification Timeline</span>
+                                <span id="iap-timer">0.0s</span>
+                            </div>
+                            <div id="iap-timeline" class="iap-timeline-container">
+                                <p class="empty-state">Waiting for IAP signals...</p>
+                            </div>
+                        </div>
+
+                        <!-- Summary Section -->
+                        <div>
+                            <div class="card" style="margin-bottom: 20px;">
+                                <div style="font-size: 12px; text-transform: uppercase; color: #a1a1aa; margin-bottom: 16px;">Validation Summary</div>
+                                <div style="display: flex; flex-direction: column; gap: 12px;">
+                                    <div class="iap-summary-item">
+                                        <span class="label">Purchase Time:</span>
+                                        <span id="iap-val-time" class="value">—</span>
+                                    </div>
+                                    <div class="iap-summary-item">
+                                        <span class="label">Backend Verified:</span>
+                                        <span id="iap-val-backend" class="value">—</span>
+                                    </div>
+                                    <div class="iap-summary-item">
+                                        <span class="label">Last Error:</span>
+                                        <span id="iap-val-error" class="value" style="color: var(--danger);">None</span>
+                                    </div>
+                                    <div class="iap-summary-item" id="iap-val-error-message-row" style="display: none;">
+                                        <span class="label">Error Detail:</span>
+                                        <span id="iap-val-error-message" class="value" style="color: #fcd34d; font-size: 11px; text-align: right;"></span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <button id="iap-stop-btn" class="btn outline danger" style="width: 100%;">Stop & Finalize Test</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ── TAB: GAME BLOCKERS ──────────────────── -->
+            <section class="tab-panel" id="tab-blockers">
+                <div class="page-header">
+                    <h1>Game Blockers & Compliance</h1>
+                    <p class="page-sub">Automated verification of Play Store requirements and build stability.</p>
+                </div>
+
+                <div id="blockers-empty-state" class="empty-project-state">
+                    <div style="font-size: 48px; margin-bottom: 15px;">🚨</div>
+                    <h3>No Build Analyzed</h3>
+                    <p style="color: #a1a1aa; max-width: 400px; margin: 0 auto 20px;">Run a blocker scan on the current APK to check for 64-bit support, target SDK compliance, and build integrity.</p>
+                    <button id="blockers-scan-btn" class="btn primary">Scan for Blockers</button>
+                </div>
+
+                <div id="blockers-content" class="hidden">
+                    <!-- Top Summary Cards (Reference Image Style) -->
+                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px;">
+                        <div class="card" style="padding: 20px; border-top: 4px solid #f87171; background: rgba(248, 113, 113, 0.05);">
+                            <div style="font-size: 11px; text-transform: uppercase; color: #fca5a5; font-weight: bold; margin-bottom: 12px; letter-spacing: 0.05em;">Critical Blockers</div>
+                            <div id="blocker-count-crit" style="font-size: 38px; font-weight: 800; color: #fff;">0</div>
+                        </div>
+                        <div class="card" style="padding: 20px; border-top: 4px solid #fbbf24; background: rgba(251, 191, 36, 0.05);">
+                            <div style="font-size: 11px; text-transform: uppercase; color: #fde68a; font-weight: bold; margin-bottom: 12px; letter-spacing: 0.05em;">High Priority</div>
+                            <div id="blocker-count-high" style="font-size: 38px; font-weight: 800; color: #fff;">0</div>
+                        </div>
+                        <div class="card" style="padding: 20px; border-top: 4px solid #38bdf8; background: rgba(56, 189, 248, 0.05);">
+                            <div style="font-size: 11px; text-transform: uppercase; color: #bae6fd; font-weight: bold; margin-bottom: 12px; letter-spacing: 0.05em;">Medium Review</div>
+                            <div id="blocker-count-med" style="font-size: 38px; font-weight: 800; color: #fff;">0</div>
+                        </div>
+                    </div>
+
+                    <!-- Readiness Summary -->
+                    <div class="card" style="padding: 20px; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center; border-left: 4px solid var(--primary);">
+                        <div>
+                            <div style="font-size: 14px; font-weight: 700; color: #fff; margin-bottom: 4px;">Build Stability Verdict</div>
+                            <div id="blocker-verdict-text" style="font-size: 12px; color: #a1a1aa;">Ready for compliance testing.</div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="font-size: 10px; text-transform: uppercase; color: #71717a; margin-bottom: 4px;">Readiness Score</div>
+                            <div id="blocker-readiness-score" style="font-size: 24px; font-weight: 800; color: #2dd4bf;">100%</div>
+                        </div>
+                    </div>
+
+                    <!-- Issue List (Professional Card Style) -->
+                    <div id="blocker-issue-list" style="display: flex; flex-direction: column; gap: 16px; margin-bottom: 24px;">
+                        <!-- Detailed Issue Cards -->
+                    </div>
+
+                    <!-- AI Blocker Analysis Panel -->
+                    <div class="card" style="padding: 20px; background: rgba(139, 92, 246, 0.05); border: 1px solid rgba(139, 92, 246, 0.2);">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <span style="font-size: 20px;">🤖</span>
+                                <div style="font-size: 13px; font-weight: 700; color: #a78bfa; text-transform: uppercase; letter-spacing: 0.05em;">AI Blocker Analysis</div>
+                            </div>
+                            <button id="blocker-ai-btn" class="btn-xs primary" style="padding: 4px 12px;">Regenerate Analysis</button>
+                        </div>
+                        <div id="blocker-ai-content" style="font-size: 13px; color: #d4d4d8; line-height: 1.6; white-space: pre-wrap;">
+                            <p style="color: #71717a; font-style: italic;">Select an APK and scan to generate AI risk assessment...</p>
+                        </div>
+                    </div>
+
+                    <!-- Environment Checklist -->
+                    <div class="card" style="margin-top: 24px; padding: 20px;">
+                        <div style="font-size: 11px; text-transform: uppercase; color: #a1a1aa; margin-bottom: 16px; font-weight: 700; letter-spacing: 0.05em;">Build Environment Checklist</div>
+                        <div id="blocker-env-list" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px;">
+                             <!-- Checklist items -->
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ── TAB: BUILD REGRESSION ────────────────────── -->
+            <section class="tab-panel" id="tab-regression">
+                <div class="page-header">
+                    <h1>Build Regression</h1>
+                    <p class="page-sub">Drop in OLD APK + NEW APK — see exactly what changed and whether it's a regression.</p>
+                </div>
+
+                <div class="card" style="margin-bottom: 24px;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+                        <div style="padding: 14px; background: rgba(255,255,255,0.02); border: 1px dashed rgba(255,255,255,0.08); border-radius: 8px;">
+                            <div style="font-size: 10px; color: #71717a; text-transform: uppercase; margin-bottom: 6px;">Old / Baseline APK</div>
+                            <div id="reg-old-name" style="font-size: 13px; color: #a1a1aa; margin-bottom: 8px; word-break: break-all;">No file selected</div>
+                            <button id="reg-pick-old" class="btn outline" style="font-size: 11px; padding: 6px 12px;">Pick Old APK</button>
+                            <button id="reg-use-active-old" class="btn outline" style="font-size: 11px; padding: 6px 12px; margin-left: 6px;">Use Active APK</button>
+                        </div>
+                        <div style="padding: 14px; background: rgba(255,255,255,0.02); border: 1px dashed rgba(255,255,255,0.08); border-radius: 8px;">
+                            <div style="font-size: 10px; color: #71717a; text-transform: uppercase; margin-bottom: 6px;">New / Candidate APK</div>
+                            <div id="reg-new-name" style="font-size: 13px; color: #a1a1aa; margin-bottom: 8px; word-break: break-all;">No file selected</div>
+                            <button id="reg-pick-new" class="btn outline" style="font-size: 11px; padding: 6px 12px;">Pick New APK</button>
+                            <button id="reg-use-active-new" class="btn outline" style="font-size: 11px; padding: 6px 12px; margin-left: 6px;">Use Active APK</button>
+                        </div>
+                    </div>
+                    <div style="display: flex; gap: 12px; align-items: center;">
+                        <button id="reg-compare-btn" class="btn primary" style="padding: 10px 22px;" disabled>Compare Builds</button>
+                        <span style="font-size: 11px; color: var(--text-muted);">Pulls performance delta from session history if both versions were tested before.</span>
+                    </div>
+                </div>
+
+                <div id="reg-empty" class="empty-project-state" style="margin-top: 24px;">
+                    <div style="font-size: 48px; margin-bottom: 15px;">🔬</div>
+                    <h3>Drop two APKs above to see regression diff</h3>
+                    <p style="font-size: 12px; color: var(--text-muted);">Reports size, version, permissions, SDKs, manifest flags, security risk, and FPS/memory/crash deltas.</p>
+                </div>
+
+                <div id="reg-results" class="hidden"></div>
             </section>
 
             <!-- ── TAB: STATIC ANALYSIS ────────────────────── -->
@@ -703,6 +901,11 @@
                                 <div style="font-size: 11px; color: #a1a1aa;">Target SDK</div>
                                 <div id="apk-info-target"
                                     style="font-size: 14px; color: #fff; font-weight: bold; margin-top: 4px;">—</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 11px; color: #a1a1aa;">Game Engine</div>
+                                <div id="apk-info-engine"
+                                    style="font-size: 14px; color: #38bdf8; font-weight: bold; margin-top: 4px;">—</div>
                             </div>
                         </div>
                     </div>
@@ -961,6 +1164,8 @@
                     </div>
                 </div>
             </section>
+
+
 
         </main>
     </div>

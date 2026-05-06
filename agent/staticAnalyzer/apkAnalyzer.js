@@ -32,9 +32,14 @@ class ApkAnalyzer {
             const directory = await unzipper.Open.file(apkPath);
             const files = directory.files.map(f => f.path);
 
-            if (files.some(f => f.includes('libunity.so'))) return 'Unity';
-            if (files.some(f => f.includes('libUE4.so'))) return 'Unreal Engine';
-            if (files.some(f => f.includes('libcocos2d'))) return 'Cocos';
+            const hasUnity = files.some(f => f.toLowerCase().includes('libunity.so') || f.toLowerCase().includes('unity-classes.jar') || f.toLowerCase().includes('assets/bin/data'));
+            if (hasUnity) return 'Unity';
+
+            const hasUnreal = files.some(f => f.toLowerCase().includes('libue4.so') || f.toLowerCase().includes('libunreal.so'));
+            if (hasUnreal) return 'Unreal Engine';
+
+            const hasCocos = files.some(f => f.toLowerCase().includes('libcocos2d') || f.toLowerCase().includes('cocos2d-js'));
+            if (hasCocos) return 'Cocos';
 
             return 'Native / Unknown';
         } catch (e) {
@@ -108,6 +113,15 @@ class ApkAnalyzer {
             info.versionCode = manifest.versionCode || info.versionCode;
             info.minSdk = sdk.minSdkVersion || info.minSdk;
             info.targetSdk = sdk.targetSdkVersion || info.targetSdk;
+
+            // Robust targetSdk fallbacks from manifest root attributes
+            if (info.targetSdk === "N/A") {
+                info.targetSdk = manifest.compileSdkVersion
+                    || manifest.platformBuildVersionCode
+                    || manifest.compileSdkVersionCodename
+                    || info.targetSdk;
+            }
+
             info.permissions = manifestPermissions;
             info.debug = securityAnalyzer.normalizeBoolean(manifest.application?.debuggable);
             info.exportedComponents = securityAnalyzer.collectExportedComponents(manifest);
@@ -175,13 +189,13 @@ class ApkAnalyzer {
                 }
 
                 let targetSdk = "N/A";
-                const targetSdkMatch = output.match(/targetSdkVersion:'(\d+)'/);
+                const targetSdkMatch = output.match(/targetSdkVersion:\s*'(\d+)'/) || output.match(/targetSdkVersion:'(\d+)'/);
                 if (targetSdkMatch && targetSdkMatch[1]) {
                     targetSdk = targetSdkMatch[1];
                 }
 
                 if (targetSdk === "N/A") {
-                    const altMatch = output.match(/targetSdkVersion:'?(\d+)'?/);
+                    const altMatch = output.match(/targetSdkVersion:(\d+)/);
                     if (altMatch) targetSdk = altMatch[1];
                 }
                 
@@ -222,22 +236,31 @@ class ApkAnalyzer {
                     }
                 }
 
-                // Supplementary list check for Engine
+                // Supplementary list check for Engine (inside aapt)
                 try {
                     const listOutput = await this.runAaptCommand(`${aaptCmdStr} list "${apkPath}"`);
-                    let engine = await this.detectEngineFromAPK(apkPath);
-                    info.sdkInfo.engine = engine || 'Unknown';
-
-                    // Deep SDK detection
-                    const staticSDK = await this.detectSDKsFromAPK(apkPath);
-                info.sdkInfo.ads = staticSDK.ads || (listOutput.includes('ads') || listOutput.includes('admob') || listOutput.includes('applovin'));
-                info.sdkInfo.firebase = staticSDK.firebase || (listOutput.includes('firebase') || listOutput.includes('google-services.json'));
+                    info.sdkInfo.ads = info.sdkInfo.ads || (listOutput.includes('ads') || listOutput.includes('admob') || listOutput.includes('applovin'));
+                    info.sdkInfo.firebase = info.sdkInfo.firebase || (listOutput.includes('firebase') || listOutput.includes('google-services.json'));
                 } catch (e) {}
 
             } catch (aaptErr) {
                 console.error("[StaticAnalyzer] AAPT enhancement failed:", aaptErr.message);
             }
         }
+
+        // 4b. Engine & SDK Detection (does NOT need aapt — uses unzipper)
+        try {
+            const engine = await this.detectEngineFromAPK(apkPath);
+            info.sdkInfo.engine = engine || 'Native / Unknown';
+        } catch (e) {
+            console.error("[StaticAnalyzer] Engine detection failed:", e.message);
+        }
+
+        try {
+            const staticSDK = await this.detectSDKsFromAPK(apkPath);
+            info.sdkInfo.ads = info.sdkInfo.ads || staticSDK.ads;
+            info.sdkInfo.firebase = info.sdkInfo.firebase || staticSDK.firebase;
+        } catch (e) {}
 
         // 5. Security Audit
         try {

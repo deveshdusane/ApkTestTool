@@ -39,4 +39,18 @@ contextBridge.exposeInMainWorld('api', {
     // Proxy (Phase 3)
     getProxyStatus:   ()              => ipcRenderer.invoke('get-proxy-status'),
     installCACert:    ()              => ipcRenderer.invoke('install-ca-cert'),
+
+    // IAP Validation
+    iapDetectSDK:     (pkg, deviceId, apkPath) => ipcRenderer.invoke('iap-detect-sdk', { pkg, deviceId, apkPath }),
+    iapStartTest:     (pkg)           => ipcRenderer.invoke('iap-start-test', { pkg }),
+    iapStopTest:      ()              => ipcRenderer.invoke('iap-stop-test'),
+    iapGetResult:     ()              => ipcRenderer.invoke('iap-get-result'),
+
+    // Blockers
+    runBlockerScan: (apkPath) => ipcRenderer.invoke('run-blocker-scan', apkPath),
+
+    // Build Regression Comparator
+    selectSecondApk: () => ipcRenderer.invoke('select-second-apk'),
+    buildRegressionCompare: (oldApkPath, newApkPath, projectName) =>
+        ipcRenderer.invoke('build-regression-compare', { oldApkPath, newApkPath, projectName }),
 });
