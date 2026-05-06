@@ -372,8 +372,10 @@ function switchTab(tabId) {
     if (tabId === 'iap') {
         renderIAPTab();
     }
-    if (tabId === 'blockers') {
-        renderBlockerTab();
+    if (tabId === 'validation') {
+        renderValidationTab();
+    } else {
+        stopValidationPolling();
     }
     if (tabId === 'static') {
         if (currentSession.staticAnalysis) renderStaticAnalysis(currentSession.staticAnalysis);
@@ -2029,130 +2031,321 @@ function setLifecycleStep(el, state, text) {
     if (stateEl) stateEl.textContent = text;
 }
 
-// ─── GAME BLOCKERS & COMPLIANCE ──────────────────────────────────────────────
-async function renderBlockerTab() {
-    const emptyState = document.getElementById('blockers-empty-state');
-    const content = document.getElementById('blockers-content');
-    const scanBtn = document.getElementById('blockers-scan-btn');
+// ─── TEST VALIDATION — unified Automated + Manual QA ─────────────────────────
+//
+// Single page combining Pre-flight + Runtime Blockers + SDK Lifecycle + Manual
+// checklist. Polls the agent's getTestValidation() every 2 s while mounted so
+// live runtime detections (crash, ANR, low FPS) appear without manual refresh.
+// Tester ticks for manual items go through window.api.setManualCheckResult.
+//
+// Collapsed-by-default category groups keep the page scannable; user toggles
+// individual categories to drill in.
 
-    if (!selectedApkPath) {
-        emptyState.classList.remove('hidden');
-        content.classList.add('hidden');
+let validationPollInterval = null;
+const validationCollapsed = new Set();          // categories the user collapsed
+const validationFocus = { itemId: null };       // which manual notes textarea has focus (don't overwrite while typing)
+
+function stopValidationPolling() {
+    if (validationPollInterval) clearInterval(validationPollInterval);
+    validationPollInterval = null;
+}
+
+async function renderValidationTab() {
+    await refreshValidation();
+    stopValidationPolling();
+    validationPollInterval = setInterval(refreshValidation, 2000);
+}
+
+async function refreshValidation() {
+    try {
+        const data = await window.api.getTestValidation(selectedApkPath || null);
+        renderValidationSummary(data);
+        renderAutomatedSection(data.automated);
+        // Don't blow away the manual section while the user is typing in a notes
+        // textarea or the custom-test inputs — destroying and recreating those
+        // DOM nodes mid-keystroke drops focus and the typed-but-unsaved text.
+        // The next poll after blur picks up any changes.
+        if (validationFocus.itemId === null) {
+            renderManualSection(data.manual);
+        }
+    } catch (e) {
+        // First poll may run before the IPC handler is registered — ignore.
+    }
+}
+
+function renderValidationSummary(data) {
+    const s = data?.automated?.summary || { pass: 0, fail: 0, warn: 0 };
+    const m = data?.manual?.progress    || { total: 0, checked: 0 };
+    document.getElementById('tv-auto-pass').textContent = `${s.pass} PASS`;
+    document.getElementById('tv-auto-warn').textContent = `${s.warn} WARN`;
+    document.getElementById('tv-auto-fail').textContent = `${s.fail} FAIL`;
+    document.getElementById('tv-manual-progress-text').textContent = `${m.checked} / ${m.total} checked`;
+    const pct = m.total > 0 ? Math.round((m.checked / m.total) * 100) : 0;
+    document.getElementById('tv-manual-progress-bar').style.width = `${pct}%`;
+    document.getElementById('tv-session-state').textContent = data.sessionRun
+        ? 'Session recorded — runtime checks active'
+        : (data.apkAnalyzed ? 'APK analysed — start a session for runtime checks' : 'No APK selected');
+}
+
+const STATUS_BADGE_CLASS = { PASS: 'success', FAIL: 'danger', WARN: 'warning', INFO: 'info' };
+const STATUS_ITEM_CLASS  = { PASS: 'is-pass', FAIL: 'is-fail', WARN: 'is-warn', INFO: '' };
+
+function categorySummary(items) {
+    const fail = items.filter(it => it.status === 'FAIL').length;
+    const warn = items.filter(it => it.status === 'WARN').length;
+    const pass = items.filter(it => it.status === 'PASS').length;
+    return { fail, warn, pass };
+}
+
+function evidenceBlock(evidence) {
+    if (!evidence || evidence.length === 0) return '';
+    return evidence.map(e =>
+        `<pre class="tv-evidence">${escapeHtml(String(e))}</pre>`
+    ).join('');
+}
+
+function automatedItemHtml(it) {
+    const badgeClass = STATUS_BADGE_CLASS[it.status] || 'info';
+    const itemClass  = STATUS_ITEM_CLASS[it.status]  || '';
+    return `
+        <div class="tv-item ${itemClass}">
+            <div class="tv-item-head">
+                <span class="badge ${badgeClass}">${it.status}</span>
+                <span class="tv-item-title">${escapeHtml(it.title)}</span>
+                <span class="tv-confidence" title="Confidence level — how directly observable this check is.">${escapeHtml(it.confidence || 'Verified')}</span>
+            </div>
+            ${it.description ? `<div class="tv-item-desc">${escapeHtml(it.description)}</div>` : ''}
+            ${evidenceBlock(it.evidence)}
+        </div>`;
+}
+
+function renderAutomatedSection(automated) {
+    const wrap = document.getElementById('tv-automated-categories');
+    const cats = automated?.categories || [];
+    if (cats.length === 0) {
+        wrap.innerHTML = `<p class="empty-state">Pick an APK in Test Session and (optionally) run a session — automated validation populates here.</p>`;
         return;
     }
-
-    scanBtn.onclick = async () => {
-        scanBtn.disabled = true;
-        scanBtn.textContent = 'Scanning Build...';
-        
-        try {
-            const results = await window.api.runBlockerScan(selectedApkPath);
-            renderBlockerResults(results);
-            emptyState.classList.add('hidden');
-            content.classList.remove('hidden');
-        } catch (e) {
-            alert('Scan failed: ' + e.message);
-        } finally {
-            scanBtn.disabled = false;
-            scanBtn.textContent = 'Scan for Blockers';
-        }
-    };
-}
-
-function renderBlockerResults(results) {
-    const countCrit = document.getElementById('blocker-count-crit');
-    const countHigh = document.getElementById('blocker-count-high');
-    const countMed = document.getElementById('blocker-count-med');
-    const scoreEl = document.getElementById('blocker-readiness-score');
-    const verdictEl = document.getElementById('blocker-verdict-text');
-    const issueList = document.getElementById('blocker-issue-list');
-    const envList = document.getElementById('blocker-env-list');
-    const aiBtn = document.getElementById('blocker-ai-btn');
-
-    // Update Counters
-    countCrit.textContent = results.summary.critical;
-    countHigh.textContent = results.summary.high;
-    countMed.textContent = results.summary.medium;
-    
-    // Summary
-    scoreEl.textContent = `${results.score}%`;
-    scoreEl.style.color = results.score > 80 ? '#2dd4bf' : results.score > 50 ? '#fbbf24' : '#f87171';
-    verdictEl.textContent = results.status === 'Blocked' ? '⚠️ Build contains critical rejection risks.' : '✅ Build is stable for general QA.';
-
-    // Detailed Issue Cards
-    if (results.issues.length === 0) {
-        issueList.innerHTML = `
-            <div style="padding: 40px; text-align: center; background: rgba(0,0,0,0.1); border-radius: 12px; border: 1px dashed rgba(255,255,255,0.1);">
-                <div style="font-size: 32px; margin-bottom: 12px;">🎉</div>
-                <div style="font-size: 14px; font-weight: 600; color: #fff;">No compliance blockers found!</div>
-                <div style="font-size: 12px; color: #71717a; margin-top: 4px;">This build meets all standard Play Store and stability requirements.</div>
-            </div>
-        `;
-    } else {
-        issueList.innerHTML = results.issues.map(item => {
-            const color = item.severity === 'CRITICAL' ? '#f87171' : item.severity === 'HIGH' ? '#fbbf24' : '#38bdf8';
-            const bg = item.severity === 'CRITICAL' ? 'rgba(248, 113, 113, 0.08)' : item.severity === 'HIGH' ? 'rgba(251, 191, 36, 0.08)' : 'rgba(56, 189, 248, 0.08)';
-            
-            return `
-                <div class="card" style="padding: 0; overflow: hidden; border-left: 5px solid ${color}; background: ${bg};">
-                    <div style="padding: 16px; display: flex; justify-content: space-between; align-items: flex-start;">
-                        <div style="display: flex; gap: 14px;">
-                            <span style="font-size: 24px;">${item.icon}</span>
-                            <div>
-                                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
-                                    <span style="font-size: 10px; font-weight: 900; color: ${color}; background: rgba(0,0,0,0.3); padding: 1px 6px; border-radius: 4px; letter-spacing: 0.05em;">${item.severity}</span>
-                                    <span style="font-size: 14px; font-weight: 700; color: #fff;">${escapeHtml(item.title)}</span>
-                                </div>
-                                <div style="font-size: 12px; color: #d4d4d8; line-height: 1.5; max-width: 700px;">${escapeHtml(item.desc)}</div>
-                                
-                                <div style="margin-top: 12px; padding: 10px 14px; background: rgba(0,0,0,0.25); border-radius: 6px; border-left: 3px solid ${color};">
-                                    <div style="font-size: 10px; font-weight: 800; color: ${color}; text-transform: uppercase; margin-bottom: 4px;">🛠 Fix Suggestion</div>
-                                    <div style="font-size: 12px; color: #bae6fd; font-family: 'JetBrains Mono', monospace;">→ ${escapeHtml(item.fix)}</div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+    wrap.innerHTML = cats.map(cat => {
+        const sum = categorySummary(cat.items);
+        const collapsed = validationCollapsed.has('auto:' + cat.category);
+        const sumChips = [
+            sum.fail ? `<span class="badge danger">${sum.fail} FAIL</span>` : '',
+            sum.warn ? `<span class="badge warning">${sum.warn} WARN</span>` : '',
+            sum.pass ? `<span class="badge success">${sum.pass} PASS</span>` : ''
+        ].filter(Boolean).join(' ');
+        return `
+            <div class="tv-cat ${collapsed ? 'collapsed' : ''}" data-cat-key="auto:${escapeHtml(cat.category)}">
+                <button class="tv-cat-head" type="button">
+                    <span class="tv-cat-caret">▾</span>
+                    <span class="tv-cat-title">${escapeHtml(cat.category)}</span>
+                    <span class="tv-cat-count">${cat.items.length}</span>
+                    <span class="tv-cat-chips">${sumChips}</span>
+                </button>
+                <div class="tv-cat-body">
+                    ${cat.items.map(automatedItemHtml).join('')}
                 </div>
-            `;
-        }).join('');
-    }
-
-    // Environment Checklist
-    envList.innerHTML = results.environment.map(item => `
-        <div style="padding: 10px 14px; background: rgba(0,0,0,0.2); border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
-            <div style="font-size: 9px; color: #71717a; text-transform: uppercase; font-weight: 800; letter-spacing: 0.04em;">${escapeHtml(item.name)}</div>
-            <div style="font-size: 13px; font-weight: 700; color: #e4e4e7; margin-top: 2px;">${escapeHtml(item.value)}</div>
-        </div>
-    `).join('');
-
-    // AI Analysis Trigger
-    aiBtn.onclick = () => generateAIBlockerAnalysis(results);
-    generateAIBlockerAnalysis(results); // Auto-run on first load
+            </div>`;
+    }).join('');
+    // Wire toggles.
+    wrap.querySelectorAll('.tv-cat').forEach(el => {
+        el.querySelector('.tv-cat-head').addEventListener('click', () => {
+            const key = el.dataset.catKey;
+            if (validationCollapsed.has(key)) {
+                validationCollapsed.delete(key);
+                el.classList.remove('collapsed');
+            } else {
+                validationCollapsed.add(key);
+                el.classList.add('collapsed');
+            }
+        });
+    });
 }
 
-async function generateAIBlockerAnalysis(results) {
-    const aiContent = document.getElementById('blocker-ai-content');
-    aiContent.innerHTML = '<div style="color: #a78bfa; font-style: italic;">🤖 Analyzing technical risks and generating QA verdict...</div>';
+function manualItemHtml(it) {
+    const status = it.result?.status || '';
+    const notes = it.result?.notes || '';
+    const conditional = it.conditional
+        ? `<span class="badge info" title="Added because of detected SDK / engine / permission for this session.">tailored</span>`
+        : '';
+    const customBadge = it.custom
+        ? `<span class="badge warning" title="Custom test added by the tester for this session.">custom</span>`
+        : '';
+    const deleteBtn = it.custom
+        ? `<button class="btn-xs outline manual-check-delete" data-action="delete" title="Remove this custom test">✕</button>`
+        : '';
+    return `
+        <div class="manual-check-row${it.custom ? ' is-custom' : ''}" data-item-id="${escapeHtml(it.id)}">
+            <div class="manual-check-row-top">
+                <div class="manual-check-row-text">
+                    <div class="manual-check-row-label">${escapeHtml(it.label)}${conditional}${customBadge}</div>
+                    <div class="manual-check-row-why">${escapeHtml(it.why)}</div>
+                </div>
+                <div class="manual-check-controls">
+                    <button class="btn-xs ${status === 'pass' ? 'success' : 'outline'}" data-action="pass">Pass</button>
+                    <button class="btn-xs ${status === 'fail' ? 'danger'  : 'outline'}" data-action="fail">Fail</button>
+                    <button class="btn-xs ${status === 'skip' ? 'warning' : 'outline'}" data-action="skip">Skip</button>
+                    ${deleteBtn}
+                </div>
+            </div>
+            <textarea class="manual-check-notes" placeholder="Notes (optional)…">${escapeHtml(notes)}</textarea>
+        </div>`;
+}
 
-    try {
-        const prompt = `Perform a high-level QA risk assessment for an Android Game Build based on these findings:
-        - Readiness Score: ${results.score}%
-        - Status: ${results.status}
-        - Findings: ${JSON.stringify(results.issues.map(i => ({ title: i.title, severity: i.severity })))}
-        
-        Provide a concise "QA Verdict" (3-4 bullet points) explaining if this build is safe to continue testing or if it should be returned to developers immediately. Focus on Play Store compliance and stability.`;
+// Inline add-form HTML for the "Custom" category. Sits at the top of the
+// category body so the tester sees it immediately. The form holds its own
+// state in a few module-level vars so a poll-driven re-render doesn't blow
+// away what the user was typing.
+const customTestDraft = { label: '', why: '' };
 
-        // We use the same agent/main.js logic if possible, or direct API call
-        // For now, let's simulate the structured output or call if available
-        // Note: Using window.api.askAI if it exists or similar
-        const analysis = results.summary.critical > 0 
-            ? "🚨 **QA VERDICT: STOP TESTING**\n\n- Build contains critical Play Store blockers (64-bit/SDK compliance).\n- Highly likely to be rejected by external publishing teams.\n- Developers must resolve CRITICAL items before a full QA cycle can be completed.\n- Performance and stability are currently unverified due to build configuration issues."
-            : "✅ **QA VERDICT: PROCEED TO TESTING**\n\n- Build meets all major architectural requirements.\n- No critical rejection risks detected at the manifest level.\n- Proceed with standard runtime stability and gameplay smoke tests.\n- Monitor 'High' priority items like debug flags for the final release candidate.";
+function customAddFormHtml() {
+    return `
+        <div class="manual-custom-add">
+            <div class="manual-custom-add-row">
+                <input type="text" class="manual-custom-label" maxlength="160" placeholder="Custom test name (e.g. 'Boss fight reachable from menu')" value="${escapeHtml(customTestDraft.label)}">
+                <button class="btn primary btn-xs manual-custom-submit" type="button">+ Add</button>
+            </div>
+            <input type="text" class="manual-custom-why" maxlength="200" placeholder="Why (optional — what this verifies)" value="${escapeHtml(customTestDraft.why)}">
+        </div>`;
+}
 
-        aiContent.innerHTML = analysis;
-    } catch (e) {
-        aiContent.innerHTML = `<span style="color: #f87171;">AI analysis failed to generate. Technical results are still valid.</span>`;
+function renderManualSection(manual) {
+    const wrap = document.getElementById('tv-manual-categories');
+    const cats = manual?.categories || [];
+    if (cats.length === 0) {
+        wrap.innerHTML = `<p class="empty-state">Manual checklist appears once an APK is selected.</p>`;
+        return;
     }
+    wrap.innerHTML = cats.map(cat => {
+        const isCustom = cat.category === 'Custom';
+        const sum = manualCategorySummary(cat.items);
+        const collapsed = validationCollapsed.has('manual:' + cat.category);
+        const chips = [
+            sum.passed  ? `<span class="badge success">${sum.passed} pass</span>` : '',
+            sum.failed  ? `<span class="badge danger">${sum.failed} fail</span>`  : '',
+            sum.skipped ? `<span class="badge warning">${sum.skipped} skip</span>` : ''
+        ].filter(Boolean).join(' ');
+        const countText = cat.items.length === 0 ? '0' : `${sum.checked} / ${cat.items.length}`;
+        const body = isCustom
+            ? customAddFormHtml() + (cat.items.length === 0
+                ? `<p class="empty-state" style="margin: 0; font-size: 11px;">No custom tests yet. Add one above — pass / fail / skip works the same as built-in items.</p>`
+                : cat.items.map(manualItemHtml).join(''))
+            : cat.items.map(manualItemHtml).join('');
+        return `
+            <div class="tv-cat ${collapsed ? 'collapsed' : ''}${isCustom ? ' is-custom-cat' : ''}" data-cat-key="manual:${escapeHtml(cat.category)}">
+                <button class="tv-cat-head" type="button">
+                    <span class="tv-cat-caret">▾</span>
+                    <span class="tv-cat-title">${escapeHtml(cat.category)}</span>
+                    <span class="tv-cat-count">${countText}</span>
+                    <span class="tv-cat-chips">${chips}</span>
+                </button>
+                <div class="tv-cat-body">${body}</div>
+            </div>`;
+    }).join('');
+
+    // Toggles.
+    wrap.querySelectorAll('.tv-cat-head').forEach(head => {
+        head.addEventListener('click', () => {
+            const el = head.parentElement;
+            const key = el.dataset.catKey;
+            if (validationCollapsed.has(key)) { validationCollapsed.delete(key); el.classList.remove('collapsed'); }
+            else { validationCollapsed.add(key); el.classList.add('collapsed'); }
+        });
+    });
+
+    // Wire row controls.
+    wrap.querySelectorAll('.manual-check-row').forEach(row => {
+        const itemId = row.dataset.itemId;
+        const notesEl = row.querySelector('.manual-check-notes');
+
+        // Re-focus the textarea the user was typing in if the poller re-rendered the DOM.
+        if (validationFocus.itemId === itemId) {
+            const len = notesEl.value.length;
+            notesEl.focus();
+            try { notesEl.setSelectionRange(len, len); } catch {}
+        }
+        notesEl.addEventListener('focus',   () => { validationFocus.itemId = itemId; });
+        notesEl.addEventListener('blur',    async () => {
+            const currentId = itemId;
+            validationFocus.itemId = null;
+            // Persist notes if there's already a status set (else the row has no record yet).
+            const fresh = await window.api.getTestValidation(selectedApkPath || null);
+            const existing = (fresh.manual.categories.flatMap(c => c.items).find(i => i.id === currentId) || {}).result;
+            if (existing) {
+                await window.api.setManualCheckResult(currentId, existing.status, notesEl.value || '');
+            }
+        });
+
+        row.querySelectorAll('button[data-action]').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                if (btn.dataset.action === 'delete') {
+                    await window.api.removeCustomTest(itemId);
+                } else {
+                    await window.api.setManualCheckResult(itemId, btn.dataset.action, notesEl.value || '');
+                }
+                refreshValidation();
+            });
+        });
+    });
+
+    // Wire the "Add custom test" inline form (sits inside the Custom category body).
+    const form = wrap.querySelector('.manual-custom-add');
+    if (form) {
+        const labelEl  = form.querySelector('.manual-custom-label');
+        const whyEl    = form.querySelector('.manual-custom-why');
+        const submitEl = form.querySelector('.manual-custom-submit');
+
+        // Restore focus + draft text after re-render.
+        if (validationFocus.itemId === '__custom_label') {
+            const len = labelEl.value.length;
+            labelEl.focus();
+            try { labelEl.setSelectionRange(len, len); } catch {}
+        } else if (validationFocus.itemId === '__custom_why') {
+            const len = whyEl.value.length;
+            whyEl.focus();
+            try { whyEl.setSelectionRange(len, len); } catch {}
+        }
+
+        const trackDraft = (el, key, focusKey) => {
+            el.addEventListener('input', () => { customTestDraft[key] = el.value; });
+            el.addEventListener('focus', () => { validationFocus.itemId = focusKey; });
+            el.addEventListener('blur',  () => {
+                if (validationFocus.itemId === focusKey) validationFocus.itemId = null;
+            });
+        };
+        trackDraft(labelEl, 'label', '__custom_label');
+        trackDraft(whyEl,   'why',   '__custom_why');
+
+        const submit = async () => {
+            const label = (labelEl.value || '').trim();
+            if (!label) { labelEl.focus(); return; }
+            const r = await window.api.addCustomTest(label, (whyEl.value || '').trim());
+            if (r && r.success) {
+                customTestDraft.label = '';
+                customTestDraft.why = '';
+                validationFocus.itemId = null;
+                refreshValidation();
+            } else if (r && r.error) {
+                alert('Could not add custom test: ' + r.error);
+            }
+        };
+        submitEl.addEventListener('click', submit);
+        labelEl.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
+        whyEl.addEventListener('keydown',   e => { if (e.key === 'Enter') submit(); });
+    }
+}
+
+function manualCategorySummary(items) {
+    let passed = 0, failed = 0, skipped = 0, checked = 0;
+    for (const it of items) {
+        const r = it.result;
+        if (!r) continue;
+        checked++;
+        if (r.status === 'pass') passed++;
+        else if (r.status === 'fail') failed++;
+        else if (r.status === 'skip') skipped++;
+    }
+    return { passed, failed, skipped, checked };
 }
 
 // ─── BUILD REGRESSION COMPARATOR ────────────────────────────────────────────

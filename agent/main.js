@@ -17,6 +17,11 @@ const apkAnalyzer = require('./staticAnalyzer/apkAnalyzer');
 const networkAnalyzer = require('./metrics/networkAnalyzer');
 const deviceHelper = require('./utils/deviceHelper');
 const runtimeIntelligence = require('./advanced/runtimeIntelligence');
+const gameplayBlockerDetector = require('./advanced/gameplayBlockerDetector');
+const manualTestChecklistBuilder = require('./advanced/manualTestChecklistBuilder');
+const testValidationAggregator = require('./advanced/testValidationAggregator');
+const preflightAnalyzer = require('./staticAnalyzer/preflightAnalyzer');
+const iapValidationEngine = require('./advanced/iapValidationEngine');
 const deviceMatcher = require('./utils/deviceMatcher');
 const performanceScaler = require('./utils/performanceScaler');
 
@@ -33,6 +38,15 @@ class QAAgent {
         this.currentApkName = null;
         this.activeDeviceId = null;
         this.connectionFailCount = 0;
+        // Test Validation feature state — manual checklist + tester ticks for the active session,
+        // plus a cached preflight result so the validation page doesn't keep re-running AAPT.
+        this.currentManualChecklist = [];
+        this.manualChecklistResults = {}; // { itemId: { status: 'pass'|'fail'|'skip', notes, ts } }
+        // User-added manual tests under the "Custom" category. Same shape as built
+        // items so the aggregator and renderer don't need a special path.
+        this.customManualItems = []; // [{ id, label, why, category: 'Custom', custom: true }]
+        this.preflightCache = { apkPath: null, result: null }; // { apkPath, result }
+        this.sessionRun = false; // true once a session has fully started
     }
 
     /**
@@ -174,6 +188,15 @@ class QAAgent {
                 runtimeIntelligence.setStaticSDKs(this.currentApkInfo);
             }
 
+            // Start gameplay blocker detector + build initial manual checklist for this session.
+            // The detector consumes log lines + FPS/PSS/ping samples already produced by
+            // realtimeMonitor and networkAnalyzer — no new instrumentation needed.
+            const sessionCtx = this._buildSessionContext();
+            gameplayBlockerDetector.startSession(targetPackage, { hasAuthSdk: sessionCtx.hasAuthSdk });
+            this.currentManualChecklist = manualTestChecklistBuilder.build(sessionCtx);
+            this.manualChecklistResults = {};
+            this.sessionRun = true;
+
             // Still start the old realtimeMonitor for Logcat-based interaction tracking
             const logPath = path.join(sessionDir, 'logs.txt');
             realtimeMonitor.start(targetPackage, () => {}, logPath, this.activeDeviceId);
@@ -212,6 +235,9 @@ class QAAgent {
             this.performanceData = performanceMonitor.stop();
             this.advancedAuditData = realtimeMonitor.getAdvancedAudit();
             realtimeMonitor.stop();
+            // Finalize gameplay blocker detector. userInitiated=true tells it the session
+            // ended on a Stop click, so it won't misattribute that as an OOM kill.
+            this.gameplayBlockerResult = gameplayBlockerDetector.stopSession({ userInitiated: true });
 
             // Stop Network Intelligence
             networkAnalyzer.stopPingTracking();
@@ -244,14 +270,19 @@ class QAAgent {
             const logPath = path.join(sessionDir, 'logs.txt');
             const analysis = logAnalyzer.analyzeLogFile(logPath);
             const uiAnalysis = uiAnalyzer.analyzeUI(sessionDir, analysis);
+            // Snapshot the unified Test Validation result at report-time so the saved
+            // session JSON has automated checks + manual ticks + summary in one block.
+            const testValidationSnapshot = await this.getTestValidation(this.preflightCache.apkPath);
+
             const reportData = reportGenerator.generateReport(
-                analysis, 
-                this.launchResult, 
-                duration, 
-                this.performanceData, 
+                analysis,
+                this.launchResult,
+                duration,
+                this.performanceData,
                 uiAnalysis,
                 this.advancedAuditData,
-                this.currentApkInfo
+                this.currentApkInfo,
+                { testValidation: testValidationSnapshot }
             );
 
             const memorySamples = this.performanceData?.memory || [];
@@ -315,6 +346,14 @@ class QAAgent {
             this.currentApkInfo = await apkAnalyzer.analyze(apkPath);
             this.currentApkName = apkPath ? path.basename(apkPath) : null;
             if (this.currentApkInfo) this.currentApkInfo.apkName = this.currentApkName;
+            // New APK → drop preflight cache + manual checklist + session-run flag so the
+            // validation page rebuilds everything for the new build. Custom tests reset
+            // too — they're per-build additions, not global preferences.
+            this.preflightCache = { apkPath: null, result: null };
+            this.currentManualChecklist = manualTestChecklistBuilder.build(this._buildSessionContext());
+            this.manualChecklistResults = {};
+            this.customManualItems = [];
+            this.sessionRun = false;
             return this.currentApkInfo;
         } catch (error) {
             logger.logError(`Analysis Error: ${error.message}`);
@@ -372,6 +411,158 @@ class QAAgent {
             await new Promise(resolve => setTimeout(resolve, 500));
         }
         throw new Error("Device detection timed out.");
+    }
+
+    /**
+     * Derive the session context the blocker detector and manual checklist builder need
+     * from currentApkInfo. Kept as one method so the two consumers can't drift in what
+     * they each compute about the session.
+     */
+    _buildSessionContext() {
+        const info = this.currentApkInfo || {};
+        const sdkInfo = info.sdkInfo || {};
+        const detectedSdks = (info.sdkIntelligence && info.sdkIntelligence.sdks) || {};
+
+        const sdks = [];
+        for (const [key, val] of Object.entries(detectedSdks)) {
+            if (val && val.detected) sdks.push(key);
+        }
+        if (sdkInfo.firebase) sdks.push('firebase');
+        if (sdkInfo.ads)      sdks.push('ads');
+
+        const hasIap = !!detectedSdks.iap?.detected ||
+                       !!detectedSdks.google_play_billing?.detected ||
+                       sdks.some(s => /iap|billing/i.test(s));
+        const hasAds = !!sdkInfo.ads ||
+                       sdks.some(s => /admob|unityads|applovin|ironsource|levelplay|chartboost|max/i.test(s));
+        const hasFirebaseAnalytics = !!sdkInfo.firebase ||
+                       !!detectedSdks.firebase?.detected ||
+                       !!detectedSdks.firebase_analytics?.detected;
+        const hasAuthSdk = !!detectedSdks.firebase?.detected ||
+                       !!detectedSdks.firebase_auth?.detected ||
+                       !!detectedSdks.play_games?.detected ||
+                       !!detectedSdks.google_play_games?.detected;
+
+        return {
+            engine: sdkInfo.engine || 'Native',
+            sdks,
+            targetSdk: info.targetSdk,
+            permissions: info.permissions || [],
+            hasIap,
+            hasAds,
+            hasFirebaseAnalytics,
+            hasAuthSdk,
+            cleartextAllowed: !!info.security?.usesCleartextTraffic
+        };
+    }
+
+    /** Returns the current detector result. Safe to call any time. */
+    getGameplayBlockerResult() {
+        return gameplayBlockerDetector.getResult();
+    }
+
+    /** Returns the merged checklist (built-in tailored items + tester-added custom items). */
+    getManualChecklist() {
+        return {
+            items: [...(this.currentManualChecklist || []), ...(this.customManualItems || [])],
+            results: this.manualChecklistResults || {}
+        };
+    }
+
+    /** Tester ticked / changed an item. status ∈ {'pass','fail','skip'}. */
+    setManualCheckResult(itemId, status, notes = '') {
+        if (!itemId) return { success: false, error: 'itemId required' };
+        if (!['pass', 'fail', 'skip'].includes(status)) {
+            return { success: false, error: `invalid status: ${status}` };
+        }
+        const allItems = [...(this.currentManualChecklist || []), ...(this.customManualItems || [])];
+        const exists = allItems.some(it => it.id === itemId);
+        if (!exists) return { success: false, error: `unknown item: ${itemId}` };
+        this.manualChecklistResults[itemId] = { status, notes: String(notes || ''), ts: Date.now() };
+        return { success: true };
+    }
+
+    /**
+     * Tester adds a custom manual test to the active session.
+     * The item goes into the "Custom" category and supports pass/fail/skip + notes
+     * exactly like a built-in item — no special-casing downstream.
+     */
+    addCustomTest(label, why = '') {
+        const trimmed = String(label || '').trim();
+        if (!trimmed) return { success: false, error: 'label required' };
+        if (trimmed.length > 160) return { success: false, error: 'label too long (max 160 chars)' };
+        const id = `custom_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        const item = {
+            id,
+            category: 'Custom',
+            label: trimmed,
+            why: String(why || '').trim() || 'Custom check added by tester for this session.',
+            conditional: false,
+            custom: true
+        };
+        this.customManualItems.push(item);
+        return { success: true, item };
+    }
+
+    /** Remove a custom test (and its result, if any). Returns {success}. */
+    removeCustomTest(itemId) {
+        if (!itemId) return { success: false, error: 'itemId required' };
+        const before = this.customManualItems.length;
+        this.customManualItems = this.customManualItems.filter(it => it.id !== itemId);
+        if (this.customManualItems.length === before) {
+            return { success: false, error: `unknown custom test: ${itemId}` };
+        }
+        if (this.manualChecklistResults[itemId]) delete this.manualChecklistResults[itemId];
+        return { success: true };
+    }
+
+    /**
+     * Run preflight on the supplied APK and cache the result.
+     * The Test Validation page calls this on first open, then re-uses the cache so
+     * we don't keep re-running AAPT on every UI poll.
+     */
+    async runPreflight(apkPath) {
+        if (!apkPath) return { error: 'No APK path provided.' };
+        if (this.preflightCache.apkPath === apkPath && this.preflightCache.result) {
+            return this.preflightCache.result;
+        }
+        const result = await preflightAnalyzer.analyze(apkPath);
+        this.preflightCache = { apkPath, result };
+        return result;
+    }
+
+    /**
+     * The unified Test Validation page consumes this. Returns automated checks
+     * (preflight + runtime + SDK lifecycle) AND the manual checklist with tester
+     * ticks, in one shot. Safe to call before, during, or after a session.
+     *
+     * If `apkPath` is provided and no preflight has been cached yet, this will
+     * lazily run preflight in the background. The first call may return without
+     * preflight rows; the next poll picks them up.
+     */
+    async getTestValidation(apkPath = null) {
+        // Lazy-cache preflight so the renderer doesn't have to manage it.
+        if (apkPath && (!this.preflightCache.result || this.preflightCache.apkPath !== apkPath)) {
+            // Don't await — let the next poll pick up the cached result so the UI feels responsive.
+            this.runPreflight(apkPath).catch(() => {});
+        }
+
+        const sessionCtx = this._buildSessionContext();
+        const builtItems = this.sessionRun ? (this.currentManualChecklist || [])
+                                           : manualTestChecklistBuilder.build(sessionCtx);
+        // Merge built-in tailored items with any custom tests the tester added.
+        const manualItems = [...builtItems, ...(this.customManualItems || [])];
+
+        return testValidationAggregator.aggregate({
+            preflightResult:       this.preflightCache.result,
+            gameplayBlockerResult: gameplayBlockerDetector.getResult(),
+            runtimeIntel:          (typeof runtimeIntelligence.getResult === 'function') ? runtimeIntelligence.getResult() : null,
+            iapData:               (typeof iapValidationEngine.getResult === 'function') ? iapValidationEngine.getResult() : null,
+            manualItems,
+            manualResults:         this.manualChecklistResults || {},
+            sessionCtx,
+            sessionRun:            this.sessionRun
+        });
     }
 
     /**

@@ -8,6 +8,7 @@ const networkAnalyzer = require('./metrics/networkAnalyzer');
 const memoryAnalyzer = require('./advanced/memoryAnalyzer'); // Keeping this in advanced for now
 const runtimeIntelligence = require('./advanced/runtimeIntelligence');
 const iapValidationEngine = require('./advanced/iapValidationEngine');
+const gameplayBlockerDetector = require('./advanced/gameplayBlockerDetector');
 const proxyServer = require('./proxy/proxyServer');
 
 let logcatInterval = null;
@@ -217,6 +218,9 @@ const fetchAndSend = async (deviceId, pkg, onData) => {
                     if (iapValidationEngine && iapValidationEngine.data.isActive) {
                         iapValidationEngine.analyzeLogs(lines);
                     }
+                    if (gameplayBlockerDetector && gameplayBlockerDetector.data.isActive) {
+                        gameplayBlockerDetector.analyzeLogs(lines);
+                    }
                 }
             }
         } catch (err) { }
@@ -228,6 +232,10 @@ const fetchAndSend = async (deviceId, pkg, onData) => {
 
             if (memoryAnalyzer) {
                 memoryAnalyzer.analyze(mem);
+            }
+            if (gameplayBlockerDetector && gameplayBlockerDetector.data.isActive) {
+                if (Number.isFinite(fps) && fps > 0) gameplayBlockerDetector.recordFps(fps);
+                if (Number.isFinite(mem) && mem > 0) gameplayBlockerDetector.recordPss(mem);
             }
         } catch (err) {
             console.error("[RealtimeMonitor] Audit sampling failed:", err.message);

@@ -1,5 +1,6 @@
 const { runADB } = require("../adb/adbHelper");
 const fs = require("fs");
+const gameplayBlockerDetector = require('../advanced/gameplayBlockerDetector');
 
 let pingSamples = [];
 let totalDataUsed = 0;
@@ -13,13 +14,17 @@ let logcatProcess;
 
 function startPingTracking(deviceId) {
   const pollPing = async () => {
+    let success = false;
     try {
       // Use a faster ping with smaller payload
       const output = await runADB(["-s", deviceId, "shell", "ping", "-c", "1", "-w", "2", "8.8.8.8"]);
       const match = output.match(/time=([\d.]+)\s*ms/) || output.match(/([\d.]+)\s*ms/);
       if (match) {
         const ping = Math.round(parseFloat(match[1]));
-        if (ping > 0) pingSamples.push(ping);
+        if (ping > 0) {
+          pingSamples.push(ping);
+          success = true;
+        }
       } else {
         // Only count as disconnect if it's truly unreachable
         if (output.includes("100% packet loss") || output.includes("unreachable")) {
@@ -28,6 +33,9 @@ function startPingTracking(deviceId) {
       }
     } catch (err) {
       disconnectCount++;
+    }
+    if (gameplayBlockerDetector && gameplayBlockerDetector.data.isActive) {
+      gameplayBlockerDetector.recordPing(success);
     }
   };
 

@@ -9,7 +9,7 @@ const aiEventClassifier = require('../agent/advanced/aiEventClassifier');
 const proxyServer = require('../agent/proxy/proxyServer');
 const certManager = require('../agent/proxy/certManager');
 const iapValidationEngine = require('../agent/advanced/iapValidationEngine');
-const blockerAnalyzer = require('../agent/advanced/blockerAnalyzer');
+const preflightAnalyzer = require('../agent/staticAnalyzer/preflightAnalyzer');
 const buildRegressionComparator = require('../agent/staticAnalyzer/buildRegressionComparator');
 
 const agent = new QAAgent();
@@ -260,8 +260,36 @@ ipcMain.handle('iap-get-result', async () => {
     return iapValidationEngine.getResult();
 });
 
-ipcMain.handle('run-blocker-scan', async (event, apkPath) => {
-    return blockerAnalyzer.analyze(apkPath);
+// ── TEST VALIDATION (unified Pre-flight + Gameplay + Manual) ─────────────────
+//
+// Single source of truth for the new Test Validation page. Returns automated
+// checks (preflight + runtime + SDK lifecycle) AND the manual checklist with
+// tester ticks, all in one payload. The renderer polls this and re-paints.
+ipcMain.handle('get-test-validation', async (_event, { apkPath } = {}) => {
+    return agent.getTestValidation(apkPath);
+});
+
+ipcMain.handle('run-preflight', async (_event, apkPath) => {
+    return agent.runPreflight(apkPath);
+});
+
+ipcMain.handle('set-manual-check-result', async (_event, { itemId, status, notes }) => {
+    return agent.setManualCheckResult(itemId, status, notes);
+});
+
+// Tester-added "Custom" tests inside Manual QA. Pass/fail/skip + notes flow
+// through the existing set-manual-check-result handler — no special-casing.
+ipcMain.handle('add-custom-test', async (_event, { label, why } = {}) => {
+    return agent.addCustomTest(label, why);
+});
+ipcMain.handle('remove-custom-test', async (_event, { itemId } = {}) => {
+    return agent.removeCustomTest(itemId);
+});
+
+// Legacy `preflightAnalyzer` direct call kept available for any caller still on
+// the old API; new callers should use `get-test-validation`.
+ipcMain.handle('run-preflight-scan', async (_event, apkPath) => {
+    return preflightAnalyzer.analyze(apkPath);
 });
 
 ipcMain.handle('select-second-apk', async () => {

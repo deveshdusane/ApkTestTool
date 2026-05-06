@@ -46,8 +46,19 @@ contextBridge.exposeInMainWorld('api', {
     iapStopTest:      ()              => ipcRenderer.invoke('iap-stop-test'),
     iapGetResult:     ()              => ipcRenderer.invoke('iap-get-result'),
 
-    // Blockers
-    runBlockerScan: (apkPath) => ipcRenderer.invoke('run-blocker-scan', apkPath),
+    // Test Validation — unified Pre-flight + Runtime + SDK Lifecycle + Manual checklist.
+    // The renderer polls `getTestValidation` for live updates; tester ticks go via
+    // `setManualCheckResult`.
+    getTestValidation:    (apkPath) => ipcRenderer.invoke('get-test-validation', { apkPath }),
+    runPreflight:         (apkPath) => ipcRenderer.invoke('run-preflight', apkPath),
+    setManualCheckResult: (itemId, status, notes) =>
+        ipcRenderer.invoke('set-manual-check-result', { itemId, status, notes }),
+    // Custom manual tests
+    addCustomTest:    (label, why) => ipcRenderer.invoke('add-custom-test', { label, why }),
+    removeCustomTest: (itemId)     => ipcRenderer.invoke('remove-custom-test', { itemId }),
+
+    // Kept for backwards compatibility; new code should use getTestValidation.
+    runPreflightScan: (apkPath) => ipcRenderer.invoke('run-preflight-scan', apkPath),
 
     // Build Regression Comparator
     selectSecondApk: () => ipcRenderer.invoke('select-second-apk'),

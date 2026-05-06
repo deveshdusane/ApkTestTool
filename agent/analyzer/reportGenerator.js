@@ -53,7 +53,7 @@ function buildSdkChecklist(eventNames, eventCounts) {
  * @param {Object}  uiAnalysis       Result from uiAnalyzer.
  * @returns {Object} Report data for UI and storage.
  */
-const generateReport = (analysis, launchSuccessful, duration, performanceData = null, uiAnalysis = null, advancedAuditData = null, apkInfo = null) => {
+const generateReport = (analysis, launchSuccessful, duration, performanceData = null, uiAnalysis = null, advancedAuditData = null, apkInfo = null, extras = {}) => {
     console.log('\n📊 QA REPORT');
     console.log('-------------------------');
 
@@ -160,6 +160,11 @@ const generateReport = (analysis, launchSuccessful, duration, performanceData = 
         },
         runtimeIntelligence: advancedAuditData?.runtime || null,
 
+        // Test Validation — the unified report block for the new Test Validation page.
+        // Contains automated[] (preflight + runtime + SDK lifecycle) and manual[]
+        // (tester checklist + pass/fail/skip ticks) plus a severity summary.
+        // Replaces the old split gameplayBlockers / manualChecklist / preflight fields.
+        testValidation: extras.testValidation || null
     };
 
     reportData.aiInsights = insightEngine.generateInsights(reportData);

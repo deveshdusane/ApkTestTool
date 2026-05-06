@@ -56,7 +56,7 @@
                 <button class="nav-item" data-tab="runtime" id="nav-runtime">🧠 Runtime Intel</button>
                 <button class="nav-item" data-tab="events" id="nav-events">🕒 Runtime Events</button>
                 <button class="nav-item" data-tab="iap" id="nav-iap">🛒 IAP Validation</button>
-                <button class="nav-item" data-tab="blockers" id="nav-blockers">🚨 Game Blockers</button>
+                <button class="nav-item" data-tab="validation" id="nav-validation">✅ Test Validation</button>
                 <button class="nav-item" data-tab="regression" id="nav-regression">🔬 Build Regression</button>
                 <button class="nav-item" data-tab="static" id="nav-static">📁 Static Analysis</button>
                 <button class="nav-item" data-tab="prediction" id="nav-prediction">🔮 Device Prediction</button>
@@ -753,74 +753,71 @@
                 </div>
             </section>
 
-            <!-- ── TAB: GAME BLOCKERS ──────────────────── -->
-            <section class="tab-panel" id="tab-blockers">
+            <!-- ── TAB: TEST VALIDATION (unified automated + manual) ──────────────── -->
+            <section class="tab-panel" id="tab-validation">
                 <div class="page-header">
-                    <h1>Game Blockers & Compliance</h1>
-                    <p class="page-sub">Automated verification of Play Store requirements and build stability.</p>
+                    <h1>Test Validation</h1>
+                    <p class="page-sub">A complete QA workflow: machine-verifiable checks first, then tester-driven validation for what logs alone can't see.</p>
                 </div>
 
-                <div id="blockers-empty-state" class="empty-project-state">
-                    <div style="font-size: 48px; margin-bottom: 15px;">🚨</div>
-                    <h3>No Build Analyzed</h3>
-                    <p style="color: #a1a1aa; max-width: 400px; margin: 0 auto 20px;">Run a blocker scan on the current APK to check for 64-bit support, target SDK compliance, and build integrity.</p>
-                    <button id="blockers-scan-btn" class="btn primary">Scan for Blockers</button>
-                </div>
-
-                <div id="blockers-content" class="hidden">
-                    <!-- Top Summary Cards (Reference Image Style) -->
-                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px;">
-                        <div class="card" style="padding: 20px; border-top: 4px solid #f87171; background: rgba(248, 113, 113, 0.05);">
-                            <div style="font-size: 11px; text-transform: uppercase; color: #fca5a5; font-weight: bold; margin-bottom: 12px; letter-spacing: 0.05em;">Critical Blockers</div>
-                            <div id="blocker-count-crit" style="font-size: 38px; font-weight: 800; color: #fff;">0</div>
-                        </div>
-                        <div class="card" style="padding: 20px; border-top: 4px solid #fbbf24; background: rgba(251, 191, 36, 0.05);">
-                            <div style="font-size: 11px; text-transform: uppercase; color: #fde68a; font-weight: bold; margin-bottom: 12px; letter-spacing: 0.05em;">High Priority</div>
-                            <div id="blocker-count-high" style="font-size: 38px; font-weight: 800; color: #fff;">0</div>
-                        </div>
-                        <div class="card" style="padding: 20px; border-top: 4px solid #38bdf8; background: rgba(56, 189, 248, 0.05);">
-                            <div style="font-size: 11px; text-transform: uppercase; color: #bae6fd; font-weight: bold; margin-bottom: 12px; letter-spacing: 0.05em;">Medium Review</div>
-                            <div id="blocker-count-med" style="font-size: 38px; font-weight: 800; color: #fff;">0</div>
-                        </div>
-                    </div>
-
-                    <!-- Readiness Summary -->
-                    <div class="card" style="padding: 20px; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center; border-left: 4px solid var(--primary);">
-                        <div>
-                            <div style="font-size: 14px; font-weight: 700; color: #fff; margin-bottom: 4px;">Build Stability Verdict</div>
-                            <div id="blocker-verdict-text" style="font-size: 12px; color: #a1a1aa;">Ready for compliance testing.</div>
-                        </div>
-                        <div style="text-align: right;">
-                            <div style="font-size: 10px; text-transform: uppercase; color: #71717a; margin-bottom: 4px;">Readiness Score</div>
-                            <div id="blocker-readiness-score" style="font-size: 24px; font-weight: 800; color: #2dd4bf;">100%</div>
-                        </div>
-                    </div>
-
-                    <!-- Issue List (Professional Card Style) -->
-                    <div id="blocker-issue-list" style="display: flex; flex-direction: column; gap: 16px; margin-bottom: 24px;">
-                        <!-- Detailed Issue Cards -->
-                    </div>
-
-                    <!-- AI Blocker Analysis Panel -->
-                    <div class="card" style="padding: 20px; background: rgba(139, 92, 246, 0.05); border: 1px solid rgba(139, 92, 246, 0.2);">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-                            <div style="display: flex; align-items: center; gap: 10px;">
-                                <span style="font-size: 20px;">🤖</span>
-                                <div style="font-size: 13px; font-weight: 700; color: #a78bfa; text-transform: uppercase; letter-spacing: 0.05em;">AI Blocker Analysis</div>
+                <!-- Top summary band -->
+                <div id="tv-summary" class="tv-summary">
+                    <div class="tv-summary-grid">
+                        <div class="tv-summary-block">
+                            <div class="tv-summary-label">Automated</div>
+                            <div class="tv-summary-value">
+                                <span class="badge success" id="tv-auto-pass">0 PASS</span>
+                                <span class="badge warning" id="tv-auto-warn">0 WARN</span>
+                                <span class="badge danger"  id="tv-auto-fail">0 FAIL</span>
                             </div>
-                            <button id="blocker-ai-btn" class="btn-xs primary" style="padding: 4px 12px;">Regenerate Analysis</button>
                         </div>
-                        <div id="blocker-ai-content" style="font-size: 13px; color: #d4d4d8; line-height: 1.6; white-space: pre-wrap;">
-                            <p style="color: #71717a; font-style: italic;">Select an APK and scan to generate AI risk assessment...</p>
+                        <div class="tv-summary-block">
+                            <div class="tv-summary-label">Manual QA</div>
+                            <div class="tv-summary-value">
+                                <span id="tv-manual-progress-text">0 / 0 checked</span>
+                                <div class="tv-progress-track">
+                                    <div id="tv-manual-progress-bar" class="tv-progress-fill" style="width: 0%;"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="tv-summary-block">
+                            <div class="tv-summary-label">Session</div>
+                            <div class="tv-summary-value" id="tv-session-state">No session yet</div>
                         </div>
                     </div>
+                </div>
 
-                    <!-- Environment Checklist -->
-                    <div class="card" style="margin-top: 24px; padding: 20px;">
-                        <div style="font-size: 11px; text-transform: uppercase; color: #a1a1aa; margin-bottom: 16px; font-weight: 700; letter-spacing: 0.05em;">Build Environment Checklist</div>
-                        <div id="blocker-env-list" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px;">
-                             <!-- Checklist items -->
+                <!-- Section 1: AUTOMATED VALIDATION -->
+                <div class="tv-section">
+                    <div class="tv-section-header">
+                        <div>
+                            <div class="tv-section-titlerow">
+                                <span class="tv-section-icon">⚙️</span>
+                                <div class="tv-section-title">Automated Validation</div>
+                                <span class="badge info" title="Machine-verifiable checks based on logs, runtime telemetry, ADB, APK analysis, and system metrics.">Machine-verified</span>
+                            </div>
+                            <div class="tv-section-sub">Every item below is grounded in a concrete observable signal: a manifest attribute, a logcat line, or a metric sample. Click a category to expand its checks.</div>
                         </div>
+                    </div>
+                    <div id="tv-automated-categories" style="display: flex; flex-direction: column; gap: 10px;">
+                        <p class="empty-state">Pick an APK in Test Session and (optionally) run a session — automated validation populates here.</p>
+                    </div>
+                </div>
+
+                <!-- Section 2: MANUAL QA VALIDATION -->
+                <div class="tv-section">
+                    <div class="tv-section-header">
+                        <div>
+                            <div class="tv-section-titlerow">
+                                <span class="tv-section-icon">🧑‍🔬</span>
+                                <div class="tv-section-title">Manual QA Validation</div>
+                                <span class="badge warning" title="Manual validation required because visual / gameplay correctness cannot be verified through logs alone.">Tester-required</span>
+                            </div>
+                            <div class="tv-section-sub">These are checks the tool cannot perform — tap responsiveness, missing textures, tutorial soft-locks, audio, save/load. Tap pass/fail/skip and add notes.</div>
+                        </div>
+                    </div>
+                    <div id="tv-manual-categories" style="display: flex; flex-direction: column; gap: 10px;">
+                        <p class="empty-state">Manual checklist appears once an APK is selected.</p>
                     </div>
                 </div>
             </section>
