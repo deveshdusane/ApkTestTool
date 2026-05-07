@@ -2,31 +2,43 @@ const path = require('path');
 const fs = require('fs');
 
 /**
- * Robust path resolution for bundled tools (adb, aapt, etc.)
+ * Robust path resolution for bundled tools (adb, aapt, etc.).
  * Works in both development and production (packaged) environments.
+ *
+ * Tools live under tools/<platform>/ where <platform> is `win`, `mac`, or
+ * `linux`. We search the platform-specific subdir first, then fall back to
+ * the legacy flat tools/ layout so older dev checkouts still work.
  */
-function getToolPath(toolName) {
-    // 1. Production Path (Electron Resources)
-    // process.resourcesPath is set by Electron when packaged
-    if (process.resourcesPath) {
-        const prodPath = path.join(process.resourcesPath, 'tools', toolName);
-        if (fs.existsSync(prodPath)) return prodPath;
-    }
+const PLATFORM_DIR = process.platform === 'win32' ? 'win'
+                  : process.platform === 'darwin' ? 'mac'
+                  : 'linux';
 
-    // 2. Development Paths (Check various relative locations)
-    const devPaths = [
-        path.join(process.cwd(), 'tools', toolName), // Project Root
-        path.join(process.cwd(), '..', 'tools', toolName), // inside electron-app/
-        path.join(__dirname, '..', '..', 'tools', toolName), // Relative to utils/
-        path.join(__dirname, '..', '..', '..', 'tools', toolName) // Relative to deep modules
+function candidates(toolName) {
+    const subPaths = [
+        path.join('tools', PLATFORM_DIR, toolName),  // preferred layout
+        path.join('tools', toolName)                 // legacy flat layout
     ];
+    const roots = [];
+    if (process.resourcesPath) roots.push(process.resourcesPath);
+    roots.push(
+        process.cwd(),
+        path.join(process.cwd(), '..'),
+        path.join(__dirname, '..', '..'),
+        path.join(__dirname, '..', '..', '..')
+    );
+    const out = [];
+    for (const r of roots) {
+        for (const sp of subPaths) out.push(path.join(r, sp));
+    }
+    return out;
+}
 
-    for (const p of devPaths) {
+function getToolPath(toolName) {
+    for (const p of candidates(toolName)) {
         if (fs.existsSync(p)) return p;
     }
-
-    // Fallback to most likely dev path if not found
-    return devPaths[0];
+    // Fall back to the most likely dev path so error messages contain a real path.
+    return path.join(process.cwd(), 'tools', PLATFORM_DIR, toolName);
 }
 
 module.exports = { getToolPath };

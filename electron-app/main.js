@@ -7,17 +7,22 @@ const fs = require('fs');
 // On Windows: %APPDATA%\TestMate AI
 process.env.TESTMATE_USER_DATA = app.getPath('userData');
 
-const QAAgent = require('../agent/main');
-const projectManager = require('../agent/manager/projectManager');
-const adbHelper = require('../agent/adb/adbHelper');
-const settingsManager = require('../agent/config/settingsManager');
-const iapValidationEngine = require('../agent/advanced/iapValidationEngine');
-const preflightAnalyzer = require('../agent/staticAnalyzer/preflightAnalyzer');
-const buildRegressionComparator = require('../agent/staticAnalyzer/buildRegressionComparator');
+// In packaged builds the agent/ folder is bundled inside the asar at <asar>/agent/
+// (sibling of main.js). In dev it lives at <repo>/agent/ (one level up). Compute
+// the right base path once so the require sites below stay readable.
+const AGENT_ROOT = app.isPackaged
+    ? path.join(__dirname, 'agent')
+    : path.join(__dirname, '..', 'agent');
+
+const QAAgent                  = require(path.join(AGENT_ROOT, 'main'));
+const projectManager           = require(path.join(AGENT_ROOT, 'manager/projectManager'));
+const adbHelper                = require(path.join(AGENT_ROOT, 'adb/adbHelper'));
+const iapValidationEngine      = require(path.join(AGENT_ROOT, 'advanced/iapValidationEngine'));
+const buildRegressionComparator = require(path.join(AGENT_ROOT, 'staticAnalyzer/buildRegressionComparator'));
+const qaChecklistManager       = require(path.join(AGENT_ROOT, 'manager/qaChecklistManager'));
 
 const agent = new QAAgent();
 let mainWindow;
-let lastSessionInfo = { sessionId: null, duration: 0 };
 
 
 function createWindow() {
@@ -101,9 +106,6 @@ ipcMain.handle('stop-test', async () => {
         // Auto-generate report on stop
         const { reportData } = await agent.generateReport(result.sessionId, result.duration);
 
-        // Persist so generate-report handler can regenerate on demand
-        lastSessionInfo = { sessionId: result.sessionId, duration: result.duration };
-
         return {
             success: true,
             message: `✔ Session stopped. Report auto-generated.`,
@@ -111,16 +113,6 @@ ipcMain.handle('stop-test', async () => {
             duration: result.duration,
             report: reportData
         };
-    } catch (err) {
-        return { success: false, message: `❌ Error: ${err.message}` };
-    }
-});
-
-ipcMain.handle('generate-report', async () => {
-    try {
-        if (!lastSessionInfo.sessionId) throw new Error('No session data found');
-        const { reportData } = await agent.generateReport(lastSessionInfo.sessionId, lastSessionInfo.duration);
-        return { success: true, message: '✔ Report generated.', report: reportData };
     } catch (err) {
         return { success: false, message: `❌ Error: ${err.message}` };
     }
@@ -182,16 +174,6 @@ ipcMain.handle('get-predictions', async () => {
     return agent.getPerformancePredictions();
 });
 
-// ─── SETTINGS IPC HANDLERS ────────────────────────────────────────────────────
-
-ipcMain.handle('get-settings', async () => {
-    return {};
-});
-
-ipcMain.handle('save-settings', async (_event, _settings) => {
-    return { success: true };
-});
-
 // ─── IAP VALIDATION IPC HANDLERS ─────────────────────────────────────────────
 
 ipcMain.handle('iap-detect-sdk', async (event, { pkg, deviceId, apkPath }) => {
@@ -219,29 +201,6 @@ ipcMain.handle('get-test-validation', async (_event, { apkPath } = {}) => {
     return agent.getTestValidation(apkPath);
 });
 
-ipcMain.handle('run-preflight', async (_event, apkPath) => {
-    return agent.runPreflight(apkPath);
-});
-
-ipcMain.handle('set-manual-check-result', async (_event, { itemId, status, notes }) => {
-    return agent.setManualCheckResult(itemId, status, notes);
-});
-
-// Tester-added "Custom" tests inside Manual QA. Pass/fail/skip + notes flow
-// through the existing set-manual-check-result handler — no special-casing.
-ipcMain.handle('add-custom-test', async (_event, { label, why } = {}) => {
-    return agent.addCustomTest(label, why);
-});
-ipcMain.handle('remove-custom-test', async (_event, { itemId } = {}) => {
-    return agent.removeCustomTest(itemId);
-});
-
-// Legacy `preflightAnalyzer` direct call kept available for any caller still on
-// the old API; new callers should use `get-test-validation`.
-ipcMain.handle('run-preflight-scan', async (_event, apkPath) => {
-    return preflightAnalyzer.analyze(apkPath);
-});
-
 ipcMain.handle('select-second-apk', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
         properties: ['openFile'],
@@ -254,4 +213,44 @@ ipcMain.handle('select-second-apk', async () => {
 
 ipcMain.handle('build-regression-compare', async (event, { oldApkPath, newApkPath, projectName }) => {
     return buildRegressionComparator.compare({ oldApkPath, newApkPath, projectName });
+});
+
+// ─── QA CHECKLIST IPC HANDLERS ───────────────────────────────────────────────
+// All handlers take projectName explicitly so the renderer controls scope.
+ipcMain.handle('qa-checklist-get', async (_event, { projectName } = {}) => {
+    return qaChecklistManager.getChecklist(projectName);
+});
+
+ipcMain.handle('qa-checklist-set-item', async (_event, { projectName, itemId, status, notes } = {}) => {
+    return qaChecklistManager.setItemStatus(projectName, itemId, status, notes);
+});
+
+ipcMain.handle('qa-checklist-bulk-set', async (_event, { projectName, itemIds, status } = {}) => {
+    return qaChecklistManager.bulkSetStatus(projectName, itemIds, status);
+});
+
+ipcMain.handle('qa-checklist-reset', async (_event, { projectName } = {}) => {
+    return qaChecklistManager.resetAll(projectName);
+});
+
+// Export the report. The renderer prompts the user for a save location, then
+// we serialize the report and write it ourselves so we can keep file IO out
+// of the renderer process.
+ipcMain.handle('qa-checklist-export', async (_event, { projectName } = {}) => {
+    if (!projectName) return { success: false, message: 'No active project.' };
+    const report = qaChecklistManager.exportReport(projectName);
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const defaultName = `qa-checklist-${projectName}-${stamp}.json`;
+    const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+        title: 'Export QA Checklist Report',
+        defaultPath: defaultName,
+        filters: [{ name: 'JSON Report', extensions: ['json'] }]
+    });
+    if (canceled || !filePath) return { success: false, message: 'Export cancelled.' };
+    try {
+        fs.writeFileSync(filePath, JSON.stringify(report, null, 2));
+        return { success: true, filePath };
+    } catch (err) {
+        return { success: false, message: err.message };
+    }
 });

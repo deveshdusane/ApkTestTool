@@ -18,12 +18,12 @@ const networkAnalyzer = require('./metrics/networkAnalyzer');
 const deviceHelper = require('./utils/deviceHelper');
 const runtimeIntelligence = require('./advanced/runtimeIntelligence');
 const gameplayBlockerDetector = require('./advanced/gameplayBlockerDetector');
-const manualTestChecklistBuilder = require('./advanced/manualTestChecklistBuilder');
 const testValidationAggregator = require('./advanced/testValidationAggregator');
 const preflightAnalyzer = require('./staticAnalyzer/preflightAnalyzer');
 const iapValidationEngine = require('./advanced/iapValidationEngine');
 const deviceMatcher = require('./utils/deviceMatcher');
 const performanceScaler = require('./utils/performanceScaler');
+const qaChecklistManager = require('./manager/qaChecklistManager');
 
 
 class QAAgent {
@@ -38,14 +38,7 @@ class QAAgent {
         this.currentApkName = null;
         this.activeDeviceId = null;
         this.connectionFailCount = 0;
-        // Test Validation feature state — manual checklist + tester ticks for the active session,
-        // plus a cached preflight result so the validation page doesn't keep re-running AAPT.
-        this.currentManualChecklist = [];
-        this.manualChecklistResults = {}; // { itemId: { status: 'pass'|'fail'|'skip', notes, ts } }
-        // User-added manual tests under the "Custom" category. Same shape as built
-        // items so the aggregator and renderer don't need a special path.
-        this.customManualItems = []; // [{ id, label, why, category: 'Custom', custom: true }]
-        this.preflightCache = { apkPath: null, result: null }; // { apkPath, result }
+        this.preflightCache = { apkPath: null, result: null };
         this.sessionRun = false; // true once a session has fully started
     }
 
@@ -57,8 +50,9 @@ class QAAgent {
         if (!this.currentProject) throw new Error('No active project selected.');
 
         const sessionId = `session_${Date.now()}`;
+        // Resolve via projectManager so packaged builds write to userData (asar is read-only).
         const sessionDir = path.join(
-            __dirname, '../projects', this.currentProject, 'sessions', sessionId
+            projectManager.getProjectPath(this.currentProject), 'sessions', sessionId
         );
         fs.mkdirSync(sessionDir, { recursive: true });
         fs.mkdirSync(path.join(sessionDir, 'screenshots'), { recursive: true });
@@ -156,7 +150,7 @@ class QAAgent {
 
             // 6. Start Captures (pass session dir inside project)
             const sessionDir = path.join(
-                __dirname, '../projects', this.currentProject, 'sessions', this.currentSessionId
+                projectManager.getProjectPath(this.currentProject), 'sessions', this.currentSessionId
             );
             logcatManager.startLogcat(this.currentSessionId, sessionDir, targetPackage, this.activeDeviceId);
             await videoManager.startRecording();
@@ -188,13 +182,10 @@ class QAAgent {
                 runtimeIntelligence.setStaticSDKs(this.currentApkInfo);
             }
 
-            // Start gameplay blocker detector + build initial manual checklist for this session.
-            // The detector consumes log lines + FPS/PSS/ping samples already produced by
-            // realtimeMonitor and networkAnalyzer — no new instrumentation needed.
+            // Start gameplay blocker detector. It consumes log lines + FPS/PSS/ping samples
+            // already produced by realtimeMonitor and networkAnalyzer.
             const sessionCtx = this._buildSessionContext();
             gameplayBlockerDetector.startSession(targetPackage, { hasAuthSdk: sessionCtx.hasAuthSdk });
-            this.currentManualChecklist = manualTestChecklistBuilder.build(sessionCtx);
-            this.manualChecklistResults = {};
             this.sessionRun = true;
 
             // Still start the old realtimeMonitor for Logcat-based interaction tracking
@@ -224,7 +215,7 @@ class QAAgent {
         try {
             screenshotManager.stopScreenshotCapture();
             const sessionDir = path.join(
-                __dirname, '../projects', this.currentProject, 'sessions', this.currentSessionId
+                projectManager.getProjectPath(this.currentProject), 'sessions', this.currentSessionId
             );
             await videoManager.stopRecording(sessionDir);
             logcatManager.stopLogcat();
@@ -268,7 +259,7 @@ class QAAgent {
             if (!this.currentProject) throw new Error('No active project.');
 
             const sessionDir = path.join(
-                __dirname, '../projects', this.currentProject, 'sessions', sessionId
+                projectManager.getProjectPath(this.currentProject), 'sessions', sessionId
             );
             const logPath = path.join(sessionDir, 'logs.txt');
             const analysis = logAnalyzer.analyzeLogFile(logPath);
@@ -276,6 +267,9 @@ class QAAgent {
             // Snapshot the unified Test Validation result at report-time so the saved
             // session JSON has automated checks + manual ticks + summary in one block.
             const testValidationSnapshot = await this.getTestValidation(this.preflightCache.apkPath);
+            // Snapshot the QA Checklist (manual 111-item list) for this project. This
+            // is the new source of truth for the manual portion of the saved report.
+            const qaChecklistSnapshot = qaChecklistManager.exportReport(this.currentProject);
 
             const reportData = reportGenerator.generateReport(
                 analysis,
@@ -285,7 +279,7 @@ class QAAgent {
                 uiAnalysis,
                 this.advancedAuditData,
                 this.currentApkInfo,
-                { testValidation: testValidationSnapshot }
+                { testValidation: testValidationSnapshot, qaChecklistSnapshot }
             );
 
             const memorySamples = this.performanceData?.memory || [];
@@ -332,6 +326,9 @@ class QAAgent {
                 timestamp: reportData.timestamp,
                 apkName,
                 packageName,
+                // versionCode/Name needed by buildRegressionComparator to diff perf across builds.
+                apkVersionCode: this.currentApkInfo?.versionCode || null,
+                apkVersionName: this.currentApkInfo?.versionName || null,
                 duration,
                 metrics: reportData.metrics,
                 summary: reportData.summary,
@@ -349,13 +346,9 @@ class QAAgent {
             this.currentApkInfo = await apkAnalyzer.analyze(apkPath);
             this.currentApkName = apkPath ? path.basename(apkPath) : null;
             if (this.currentApkInfo) this.currentApkInfo.apkName = this.currentApkName;
-            // New APK → drop preflight cache + manual checklist + session-run flag so the
-            // validation page rebuilds everything for the new build. Custom tests reset
-            // too — they're per-build additions, not global preferences.
+            // New APK → drop preflight cache + session-run flag so the QA Checklist's
+            // Automated pane re-runs static checks for the new build.
             this.preflightCache = { apkPath: null, result: null };
-            this.currentManualChecklist = manualTestChecklistBuilder.build(this._buildSessionContext());
-            this.manualChecklistResults = {};
-            this.customManualItems = [];
             this.sessionRun = false;
             return this.currentApkInfo;
         } catch (error) {
@@ -464,65 +457,9 @@ class QAAgent {
         return gameplayBlockerDetector.getResult();
     }
 
-    /** Returns the merged checklist (built-in tailored items + tester-added custom items). */
-    getManualChecklist() {
-        return {
-            items: [...(this.currentManualChecklist || []), ...(this.customManualItems || [])],
-            results: this.manualChecklistResults || {}
-        };
-    }
-
-    /** Tester ticked / changed an item. status ∈ {'pass','fail','skip'}. */
-    setManualCheckResult(itemId, status, notes = '') {
-        if (!itemId) return { success: false, error: 'itemId required' };
-        if (!['pass', 'fail', 'skip'].includes(status)) {
-            return { success: false, error: `invalid status: ${status}` };
-        }
-        const allItems = [...(this.currentManualChecklist || []), ...(this.customManualItems || [])];
-        const exists = allItems.some(it => it.id === itemId);
-        if (!exists) return { success: false, error: `unknown item: ${itemId}` };
-        this.manualChecklistResults[itemId] = { status, notes: String(notes || ''), ts: Date.now() };
-        return { success: true };
-    }
-
-    /**
-     * Tester adds a custom manual test to the active session.
-     * The item goes into the "Custom" category and supports pass/fail/skip + notes
-     * exactly like a built-in item — no special-casing downstream.
-     */
-    addCustomTest(label, why = '') {
-        const trimmed = String(label || '').trim();
-        if (!trimmed) return { success: false, error: 'label required' };
-        if (trimmed.length > 160) return { success: false, error: 'label too long (max 160 chars)' };
-        const id = `custom_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-        const item = {
-            id,
-            category: 'Custom',
-            label: trimmed,
-            why: String(why || '').trim() || 'Custom check added by tester for this session.',
-            conditional: false,
-            custom: true
-        };
-        this.customManualItems.push(item);
-        return { success: true, item };
-    }
-
-    /** Remove a custom test (and its result, if any). Returns {success}. */
-    removeCustomTest(itemId) {
-        if (!itemId) return { success: false, error: 'itemId required' };
-        const before = this.customManualItems.length;
-        this.customManualItems = this.customManualItems.filter(it => it.id !== itemId);
-        if (this.customManualItems.length === before) {
-            return { success: false, error: `unknown custom test: ${itemId}` };
-        }
-        if (this.manualChecklistResults[itemId]) delete this.manualChecklistResults[itemId];
-        return { success: true };
-    }
-
     /**
      * Run preflight on the supplied APK and cache the result.
-     * The Test Validation page calls this on first open, then re-uses the cache so
-     * we don't keep re-running AAPT on every UI poll.
+     * Re-uses the cache so we don't keep re-running AAPT on every UI poll.
      */
     async runPreflight(apkPath) {
         if (!apkPath) return { error: 'No APK path provided.' };
@@ -535,35 +472,25 @@ class QAAgent {
     }
 
     /**
-     * The unified Test Validation page consumes this. Returns automated checks
-     * (preflight + runtime + SDK lifecycle) AND the manual checklist with tester
-     * ticks, in one shot. Safe to call before, during, or after a session.
+     * Powers the QA Checklist tab's Automated pane. Returns categorised PASS/WARN/FAIL
+     * items derived from preflight, runtime blockers, SDK lifecycle, and IAP. Safe to
+     * call before, during, or after a session — empty-state when nothing's available.
      *
-     * If `apkPath` is provided and no preflight has been cached yet, this will
-     * lazily run preflight in the background. The first call may return without
-     * preflight rows; the next poll picks them up.
+     * If `apkPath` is provided and no preflight has been cached yet, runs preflight
+     * lazily in the background. The first poll may return without preflight rows; the
+     * next poll picks them up.
      */
     async getTestValidation(apkPath = null) {
-        // Lazy-cache preflight so the renderer doesn't have to manage it.
         if (apkPath && (!this.preflightCache.result || this.preflightCache.apkPath !== apkPath)) {
-            // Don't await — let the next poll pick up the cached result so the UI feels responsive.
             this.runPreflight(apkPath).catch(() => {});
         }
-
-        const sessionCtx = this._buildSessionContext();
-        const builtItems = this.sessionRun ? (this.currentManualChecklist || [])
-                                           : manualTestChecklistBuilder.build(sessionCtx);
-        // Merge built-in tailored items with any custom tests the tester added.
-        const manualItems = [...builtItems, ...(this.customManualItems || [])];
 
         return testValidationAggregator.aggregate({
             preflightResult:       this.preflightCache.result,
             gameplayBlockerResult: gameplayBlockerDetector.getResult(),
             runtimeIntel:          (typeof runtimeIntelligence.getResult === 'function') ? runtimeIntelligence.getResult() : null,
             iapData:               (typeof iapValidationEngine.getResult === 'function') ? iapValidationEngine.getResult() : null,
-            manualItems,
-            manualResults:         this.manualChecklistResults || {},
-            sessionCtx,
+            sessionCtx:            this._buildSessionContext(),
             sessionRun:            this.sessionRun
         });
     }

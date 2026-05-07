@@ -17,7 +17,6 @@ contextBridge.exposeInMainWorld('api', {
     // Session
     startTest:        (apkPath)       => ipcRenderer.invoke('start-test', apkPath),
     stopTest:         ()              => ipcRenderer.invoke('stop-test'),
-    generateReport:   ()              => ipcRenderer.invoke('generate-report'),
     onLiveData:       (callback)      => ipcRenderer.on('live-data', (_event, data) => callback(data)),
 
     // History & Reports
@@ -32,32 +31,26 @@ contextBridge.exposeInMainWorld('api', {
     // Cleanup
     deleteProject:    (name)          => ipcRenderer.invoke('delete-project', name),
 
-    // Settings
-    getSettings:      ()              => ipcRenderer.invoke('get-settings'),
-    saveSettings:     (settings)      => ipcRenderer.invoke('save-settings', settings),
-
     // IAP Validation
     iapDetectSDK:     (pkg, deviceId, apkPath) => ipcRenderer.invoke('iap-detect-sdk', { pkg, deviceId, apkPath }),
     iapStartTest:     (pkg)           => ipcRenderer.invoke('iap-start-test', { pkg }),
     iapStopTest:      ()              => ipcRenderer.invoke('iap-stop-test'),
     iapGetResult:     ()              => ipcRenderer.invoke('iap-get-result'),
 
-    // Test Validation — unified Pre-flight + Runtime + SDK Lifecycle + Manual checklist.
-    // The renderer polls `getTestValidation` for live updates; tester ticks go via
-    // `setManualCheckResult`.
-    getTestValidation:    (apkPath) => ipcRenderer.invoke('get-test-validation', { apkPath }),
-    runPreflight:         (apkPath) => ipcRenderer.invoke('run-preflight', apkPath),
-    setManualCheckResult: (itemId, status, notes) =>
-        ipcRenderer.invoke('set-manual-check-result', { itemId, status, notes }),
-    // Custom manual tests
-    addCustomTest:    (label, why) => ipcRenderer.invoke('add-custom-test', { label, why }),
-    removeCustomTest: (itemId)     => ipcRenderer.invoke('remove-custom-test', { itemId }),
-
-    // Kept for backwards compatibility; new code should use getTestValidation.
-    runPreflightScan: (apkPath) => ipcRenderer.invoke('run-preflight-scan', apkPath),
+    // QA Checklist Automated mode polls this for tool-run validation results.
+    getTestValidation: (apkPath) => ipcRenderer.invoke('get-test-validation', { apkPath }),
 
     // Build Regression Comparator
     selectSecondApk: () => ipcRenderer.invoke('select-second-apk'),
     buildRegressionCompare: (oldApkPath, newApkPath, projectName) =>
         ipcRenderer.invoke('build-regression-compare', { oldApkPath, newApkPath, projectName }),
+
+    // QA Checklist (per-project manual checklist, 20 sections / 111 items)
+    qaChecklistGet:     (projectName) => ipcRenderer.invoke('qa-checklist-get', { projectName }),
+    qaChecklistSetItem: (projectName, itemId, status, notes) =>
+        ipcRenderer.invoke('qa-checklist-set-item', { projectName, itemId, status, notes }),
+    qaChecklistBulkSet: (projectName, itemIds, status) =>
+        ipcRenderer.invoke('qa-checklist-bulk-set', { projectName, itemIds, status }),
+    qaChecklistReset:   (projectName) => ipcRenderer.invoke('qa-checklist-reset', { projectName }),
+    qaChecklistExport:  (projectName) => ipcRenderer.invoke('qa-checklist-export', { projectName }),
 });

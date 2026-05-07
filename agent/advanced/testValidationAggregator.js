@@ -368,28 +368,12 @@ function groupAndSummarise(items) {
     return { categories, summary };
 }
 
-function manualProgress(items, results) {
-    const total = items.length;
-    let checked = 0, passed = 0, failed = 0, skipped = 0;
-    for (const it of items) {
-        const r = results[it.id];
-        if (!r) continue;
-        checked++;
-        if (r.status === 'pass') passed++;
-        else if (r.status === 'fail') failed++;
-        else if (r.status === 'skip') skipped++;
-    }
-    return { total, checked, passed, failed, skipped };
-}
-
 /**
  * @param {Object} params
  * @param {Object} params.preflightResult       — preflightAnalyzer.analyze() output (or null)
  * @param {Object} params.gameplayBlockerResult — gameplayBlockerDetector.getResult()
  * @param {Object} params.runtimeIntel          — runtimeIntelligence.getResult() (or null)
  * @param {Object} params.iapData               — iapValidationEngine.getResult() (or null)
- * @param {Array}  params.manualItems           — manualTestChecklistBuilder.build() result
- * @param {Object} params.manualResults         — { itemId: {status, notes, ts} }
  * @param {Object} params.sessionCtx            — { engine, sdks, targetSdk, hasAds, hasIap, ... }
  * @param {boolean}params.sessionRun            — true if a runtime session has actually been recorded
  */
@@ -398,8 +382,6 @@ function aggregate({
     gameplayBlockerResult = null,
     runtimeIntel = null,
     iapData = null,
-    manualItems = [],
-    manualResults = {},
     sessionCtx = {},
     sessionRun = false
 } = {}) {
@@ -411,13 +393,12 @@ function aggregate({
     ];
     const automated = groupAndSummarise(automatedItems);
 
-    const manualGroups = require('./manualTestChecklistBuilder').groupByCategory(manualItems);
+    // Manual block is kept zero-shaped for back-compat: old session reports stored
+    // `testValidation.manual` and the renderer's legacy fallback still reads it.
+    // The active manual checklist now lives in qaChecklistManager — not here.
     const manual = {
-        progress: manualProgress(manualItems, manualResults),
-        categories: manualGroups.map(g => ({
-            category: g.category,
-            items: g.items.map(it => ({ ...it, result: manualResults[it.id] || null }))
-        }))
+        progress: { total: 0, checked: 0, passed: 0, failed: 0, skipped: 0 },
+        categories: []
     };
 
     return {

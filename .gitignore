@@ -4,11 +4,16 @@ package-lock.json
 
 # Build and Temp
 dist/
-build/
 bin/
 graphify-out/
 .gemini/
 .DS_Store
+
+# Generic build/ at repo root only — keep electron-app/build/ which holds icon source
+/build/
+
+# Build staging — `npm run build` copies ../agent into electron-app/agent/ here, then deletes it
+electron-app/agent/
 
 # User Data & Sessions
 sessions/

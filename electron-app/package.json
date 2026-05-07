@@ -5,9 +5,11 @@
   "main": "main.js",
   "scripts": {
     "start": "node start-electron.js",
-    "build": "electron-builder",
-    "build:mac": "electron-builder --mac",
-    "build:win": "electron-builder --win"
+    "_stage": "rm -rf agent && rsync -a --exclude=node_modules ../agent/ agent/",
+    "_unstage": "rm -rf agent",
+    "build": "npm run _stage && (electron-builder; ec=$?; npm run _unstage; exit $ec)",
+    "build:mac": "npm run _stage && (electron-builder --mac; ec=$?; npm run _unstage; exit $ec)",
+    "build:win": "npm run _stage && (electron-builder --win; ec=$?; npm run _unstage; exit $ec)"
   },
   "devDependencies": {
     "electron": "^30.5.1",
@@ -15,7 +17,6 @@
   },
   "dependencies": {
     "app-info-parser": "^1.1.6",
-    "electron-is-dev": "^3.0.1",
     "unzipper": "^0.12.3"
   },
   "build": {
@@ -24,31 +25,33 @@
     "asar": true,
     "asarUnpack": [
       "agent/adb/**",
-      "agent/proxy/**",
       "agent/utils/toolPaths.js"
     ],
     "files": [
       "**/*",
       "!agent/node_modules",
       "!node_modules/.cache",
-      "!dist/**"
-    ],
-    "extraResources": [
-      {
-        "from": "../tools/",
-        "to": "tools/",
-        "filter": ["**/*"]
-      }
+      "!dist/**",
+      "!build/icon.iconset/**"
     ],
     "directories": {
-      "output": "dist"
+      "output": "dist",
+      "buildResources": "build"
     },
     "mac": {
       "target": [{ "target": "dmg", "arch": ["arm64", "x64"] }],
-      "category": "public.app-category.developer-tools"
+      "category": "public.app-category.developer-tools",
+      "icon": "build/icon.icns",
+      "extraResources": [
+        { "from": "../tools/mac/", "to": "tools/mac/", "filter": ["**/*"] }
+      ]
     },
     "win": {
-      "target": [{ "target": "nsis", "arch": ["x64"] }]
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "icon": "build/icon.png",
+      "extraResources": [
+        { "from": "../tools/win/", "to": "tools/win/", "filter": ["**/*"] }
+      ]
     },
     "nsis": {
       "oneClick": false,

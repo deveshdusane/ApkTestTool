@@ -77,17 +77,17 @@
                     </span>
                     <span class="nav-label">IAP Validation</span>
                 </button>
-                <button class="nav-item" data-tab="validation" id="nav-validation">
-                    <span class="nav-icon">
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-                    </span>
-                    <span class="nav-label">Test Validation</span>
-                </button>
                 <button class="nav-item" data-tab="regression" id="nav-regression">
                     <span class="nav-icon">
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
                     </span>
                     <span class="nav-label">Build Regression</span>
+                </button>
+                <button class="nav-item" data-tab="qa-checklist" id="nav-qa-checklist">
+                    <span class="nav-icon">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                    </span>
+                    <span class="nav-label">QA Checklist</span>
                 </button>
                 <button class="nav-item" data-tab="static" id="nav-static">
                     <span class="nav-icon">
@@ -794,75 +794,6 @@
                 </div>
             </section>
 
-            <!-- ── TAB: TEST VALIDATION (unified automated + manual) ──────────────── -->
-            <section class="tab-panel" id="tab-validation">
-                <div class="page-header">
-                    <h1>Test Validation</h1>
-                    <p class="page-sub">A complete QA workflow: machine-verifiable checks first, then tester-driven validation for what logs alone can't see.</p>
-                </div>
-
-                <!-- Top summary band -->
-                <div id="tv-summary" class="tv-summary">
-                    <div class="tv-summary-grid">
-                        <div class="tv-summary-block">
-                            <div class="tv-summary-label">Automated</div>
-                            <div class="tv-summary-value">
-                                <span class="badge success" id="tv-auto-pass">0 PASS</span>
-                                <span class="badge warning" id="tv-auto-warn">0 WARN</span>
-                                <span class="badge danger"  id="tv-auto-fail">0 FAIL</span>
-                            </div>
-                        </div>
-                        <div class="tv-summary-block">
-                            <div class="tv-summary-label">Manual QA</div>
-                            <div class="tv-summary-value">
-                                <span id="tv-manual-progress-text">0 / 0 checked</span>
-                                <div class="tv-progress-track">
-                                    <div id="tv-manual-progress-bar" class="tv-progress-fill" style="width: 0%;"></div>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="tv-summary-block">
-                            <div class="tv-summary-label">Session</div>
-                            <div class="tv-summary-value" id="tv-session-state">No session yet</div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Section 1: AUTOMATED VALIDATION -->
-                <div class="tv-section">
-                    <div class="tv-section-header">
-                        <div>
-                            <div class="tv-section-titlerow">
-                                <span class="tv-section-icon">⚙️</span>
-                                <div class="tv-section-title">Automated Validation</div>
-                                <span class="badge info" title="Machine-verifiable checks based on logs, runtime telemetry, ADB, APK analysis, and system metrics.">Machine-verified</span>
-                            </div>
-                            <div class="tv-section-sub">Every item below is grounded in a concrete observable signal: a manifest attribute, a logcat line, or a metric sample. Click a category to expand its checks.</div>
-                        </div>
-                    </div>
-                    <div id="tv-automated-categories" style="display: flex; flex-direction: column; gap: 10px;">
-                        <p class="empty-state">Pick an APK in Test Session and (optionally) run a session — automated validation populates here.</p>
-                    </div>
-                </div>
-
-                <!-- Section 2: MANUAL QA VALIDATION -->
-                <div class="tv-section">
-                    <div class="tv-section-header">
-                        <div>
-                            <div class="tv-section-titlerow">
-                                <span class="tv-section-icon">🧑‍🔬</span>
-                                <div class="tv-section-title">Manual QA Validation</div>
-                                <span class="badge warning" title="Manual validation required because visual / gameplay correctness cannot be verified through logs alone.">Tester-required</span>
-                            </div>
-                            <div class="tv-section-sub">These are checks the tool cannot perform — tap responsiveness, missing textures, tutorial soft-locks, audio, save/load. Tap pass/fail/skip and add notes.</div>
-                        </div>
-                    </div>
-                    <div id="tv-manual-categories" style="display: flex; flex-direction: column; gap: 10px;">
-                        <p class="empty-state">Manual checklist appears once an APK is selected.</p>
-                    </div>
-                </div>
-            </section>
-
             <!-- ── TAB: BUILD REGRESSION ────────────────────── -->
             <section class="tab-panel" id="tab-regression">
                 <div class="page-header">
@@ -900,6 +831,129 @@
                 </div>
 
                 <div id="reg-results" class="hidden"></div>
+            </section>
+
+            <!-- ── TAB: QA CHECKLIST ─────────────────────── -->
+            <section class="tab-panel" id="tab-qa-checklist">
+                <div class="qa-empty" id="qa-empty-project">
+                    <div class="qa-empty-icon">
+                        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                    </div>
+                    <h2>No Project Selected</h2>
+                    <p>Select a project from the sidebar to use the QA Checklist.</p>
+                </div>
+
+                <div id="qa-content" class="hidden">
+                    <div class="qa-header">
+                        <div class="qa-title-row">
+                            <span class="qa-title-badge">✅</span>
+                            <h1>QA Checklist <span class="qa-title-sub">— Production Ready</span></h1>
+                        </div>
+                        <p class="qa-subtitle">Two layers of validation in one place: what the tool can verify automatically, and what a tester must check by hand.</p>
+                    </div>
+
+                    <!-- Mode toggle: Automated (tool-run) vs Manual (tester-run) -->
+                    <div class="qa-mode-toggle" role="tablist">
+                        <button class="qa-mode-btn active" data-mode="automated" role="tab" aria-selected="true">
+                            <span class="qa-mode-icon">🤖</span>
+                            <span class="qa-mode-label">Automated</span>
+                            <span class="qa-mode-sub">tool runs</span>
+                        </button>
+                        <button class="qa-mode-btn" data-mode="manual" role="tab" aria-selected="false">
+                            <span class="qa-mode-icon">✋</span>
+                            <span class="qa-mode-label">Manual</span>
+                            <span class="qa-mode-sub">tester runs</span>
+                        </button>
+                    </div>
+
+                    <!-- ── AUTOMATED PANE ───────────────────────────────────────── -->
+                    <div class="qa-pane qa-pane-automated active" data-pane="automated">
+                        <div class="qa-auto-summary">
+                            <div class="qa-auto-summary-block">
+                                <div class="qa-auto-summary-label">Results</div>
+                                <div class="qa-auto-summary-value">
+                                    <span class="badge success" id="qa-auto-pass">0 PASS</span>
+                                    <span class="badge warning" id="qa-auto-warn">0 WARN</span>
+                                    <span class="badge danger"  id="qa-auto-fail">0 FAIL</span>
+                                </div>
+                            </div>
+                            <div class="qa-auto-summary-block">
+                                <div class="qa-auto-summary-label">State</div>
+                                <div class="qa-auto-summary-value" id="qa-auto-state">No session yet</div>
+                            </div>
+                        </div>
+
+                        <div class="qa-auto-info">
+                            Every item below traces to a concrete signal — a manifest attribute, a logcat line, or a metric sample. Pick an APK and run a session for the fullest coverage.
+                        </div>
+
+                        <div id="qa-auto-categories">
+                            <p class="qa-auto-empty">Pick an APK in Test Session and (optionally) run a session — automated validation populates here.</p>
+                        </div>
+                    </div>
+
+                    <!-- ── MANUAL PANE ──────────────────────────────────────────── -->
+                    <div class="qa-pane qa-pane-manual" data-pane="manual">
+                        <div class="qa-toolbar">
+                            <input id="qa-search" type="text" class="qa-search" placeholder="Search tests…">
+                            <select id="qa-filter-section" class="qa-select">
+                                <option value="">All Sections</option>
+                            </select>
+                            <select id="qa-filter-status" class="qa-select">
+                                <option value="">All Status</option>
+                                <option value="pass">Passed</option>
+                                <option value="fail">Failed</option>
+                                <option value="pending">Pending</option>
+                            </select>
+                            <div class="qa-toolbar-spacer"></div>
+                            <button id="qa-pass-all-visible" class="qa-btn qa-btn-pass">✓ Pass All Visible</button>
+                            <button id="qa-fail-all-visible" class="qa-btn qa-btn-fail">✗ Fail All Visible</button>
+                            <button id="qa-reset" class="qa-btn qa-btn-ghost">↻ Reset</button>
+                            <button id="qa-export" class="qa-btn qa-btn-ghost">export report</button>
+                        </div>
+
+                        <div class="qa-stats">
+                            <div class="qa-stat qa-stat-total">
+                                <div class="qa-stat-bar"></div>
+                                <div class="qa-stat-label">TOTAL TESTS</div>
+                                <div class="qa-stat-value" id="qa-stat-total">0</div>
+                            </div>
+                            <div class="qa-stat qa-stat-passed">
+                                <div class="qa-stat-bar"></div>
+                                <div class="qa-stat-label">PASSED</div>
+                                <div class="qa-stat-value" id="qa-stat-passed">0</div>
+                            </div>
+                            <div class="qa-stat qa-stat-failed">
+                                <div class="qa-stat-bar"></div>
+                                <div class="qa-stat-label">FAILED</div>
+                                <div class="qa-stat-value" id="qa-stat-failed">0</div>
+                            </div>
+                            <div class="qa-stat qa-stat-pending">
+                                <div class="qa-stat-bar"></div>
+                                <div class="qa-stat-label">PENDING</div>
+                                <div class="qa-stat-value" id="qa-stat-pending">0</div>
+                            </div>
+                            <div class="qa-stat qa-stat-progress">
+                                <div class="qa-stat-bar"></div>
+                                <div class="qa-stat-label">PROGRESS</div>
+                                <div class="qa-stat-value" id="qa-stat-progress">0%</div>
+                                <div class="qa-stat-sub" id="qa-stat-progress-sub">0 of 0</div>
+                            </div>
+                        </div>
+
+                        <div class="qa-overall">
+                            <div class="qa-overall-row">
+                                <div class="qa-overall-label">Overall Progress</div>
+                                <div class="qa-overall-pct"><span id="qa-overall-pct">0%</span> complete</div>
+                            </div>
+                            <div class="qa-overall-track">
+                                <div class="qa-overall-fill" id="qa-overall-fill" style="width: 0%"></div>
+                            </div>
+                        </div>
+
+                        <div id="qa-sections"></div>
+                    </div>
+                </div>
             </section>
 
             <!-- ── TAB: STATIC ANALYSIS ────────────────────── -->
