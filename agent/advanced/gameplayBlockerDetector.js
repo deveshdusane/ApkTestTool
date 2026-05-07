@@ -189,6 +189,7 @@ class GameplayBlockerDetector {
         if (this._consecutivePingFails >= PING_FAIL_COUNT) {
             const evidence = `${this._consecutivePingFails} consecutive ping checks failed`;
             this._recordBlocker('network_loss_play', 'Network loss during play', 'MEDIUM', evidence);
+            this._consecutivePingFails = 0; // reset so evidence count stays accurate on recovery
         }
     }
 

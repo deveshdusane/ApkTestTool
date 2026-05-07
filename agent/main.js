@@ -230,9 +230,12 @@ class QAAgent {
             logcatManager.stopLogcat();
             
             const monitorEngine = require('./runtime/monitorEngine');
+            // Capture stable avg FPS before stopMonitoring clears the rolling history.
+            const capturedAvgFPS = monitorEngine.getStableFPS() || 0;
             monitorEngine.stopMonitoring();
-            
+
             this.performanceData = performanceMonitor.stop();
+            this.performanceData.avgFPS = capturedAvgFPS;
             this.advancedAuditData = realtimeMonitor.getAdvancedAudit();
             realtimeMonitor.stop();
             // Finalize gameplay blocker detector. userInitiated=true tells it the session
@@ -308,7 +311,7 @@ class QAAgent {
                 },
                 metrics: {
                     ...(reportData.metrics || {}),
-                    avgFPS: reportData.metrics?.avgFPS ?? 0,
+                    avgFPS: this.performanceData?.avgFPS || reportData.metrics?.avgFPS || 0,
                     memory: {
                         average: avgMemory,
                         peak: reportData.performance?.peakMemory || 0

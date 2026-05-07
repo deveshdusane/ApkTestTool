@@ -4,7 +4,10 @@ const logger = require('../utils/logger');
 
 class ProjectManager {
     constructor() {
-        this.baseDir = path.join(__dirname, '../../projects');
+        const userDataBase = process.env.TESTMATE_USER_DATA
+            ? path.join(process.env.TESTMATE_USER_DATA, 'projects')
+            : path.join(__dirname, '../../projects');
+        this.baseDir = userDataBase;
         this.ensureBaseDir();
     }
 

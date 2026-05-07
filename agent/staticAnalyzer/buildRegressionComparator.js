@@ -281,12 +281,12 @@ class BuildRegressionComparator {
 
             const extract = (s) => s ? {
                 sessionId: s.sessionId,
-                avgFps: s.metrics?.avgFps ?? s.avgFps ?? null,
-                minFps: s.metrics?.minFps ?? s.minFps ?? null,
-                avgMemoryMb: s.metrics?.avgMemoryMb ?? s.avgMemoryMb ?? null,
-                peakMemoryMb: s.metrics?.peakMemoryMb ?? s.peakMemoryMb ?? null,
-                crashes: s.crashes ?? s.metrics?.crashes ?? 0,
-                anrs: s.anrs ?? s.metrics?.anrs ?? 0
+                avgFps: s.metrics?.avgFPS ?? s.metrics?.avgFps ?? s.avgFPS ?? null,
+                minFps: null,
+                avgMemoryMb: s.metrics?.memory?.average ?? s.metrics?.avgMemoryMb ?? null,
+                peakMemoryMb: s.metrics?.memory?.peak ?? s.metrics?.peakMemoryMb ?? null,
+                crashes: (s.summary?.crash ? 1 : 0) || s.metrics?.crashes || s.crashes || 0,
+                anrs: (s.summary?.anr ? 1 : 0) || s.metrics?.anrs || s.anrs || 0
             } : null;
 
             const o = extract(oldSession);

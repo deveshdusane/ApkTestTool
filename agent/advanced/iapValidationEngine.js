@@ -77,7 +77,7 @@ class IAPValidationEngine {
                 launchFlow: 0,
                 purchaseResolved: 0,
                 billingClientLogs: 0
-            }
+            }   
         };
         // Internal tracking — not serialised to UI.
         this._lastBillingActivityMs = null;

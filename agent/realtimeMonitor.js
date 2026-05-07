@@ -9,7 +9,6 @@ const memoryAnalyzer = require('./advanced/memoryAnalyzer'); // Keeping this in 
 const runtimeIntelligence = require('./advanced/runtimeIntelligence');
 const iapValidationEngine = require('./advanced/iapValidationEngine');
 const gameplayBlockerDetector = require('./advanced/gameplayBlockerDetector');
-const proxyServer = require('./proxy/proxyServer');
 
 let logcatInterval = null;
 let monitorInterval = null;
@@ -147,11 +146,6 @@ const start = async (packageName, onData, logPath, deviceId = null) => {
             }
         } catch (e) { }
 
-        // Start MITM proxy (Phase 3) — non-blocking, graceful if openssl unavailable
-        proxyServer.start(deviceId, (ev) => {
-            try { runtimeIntelligence.addProxyEvent(ev); } catch {}
-        }).catch(() => {});
-
         // Note: networkAnalyzer ping/usage tracking is started by main.js — do NOT start here to avoid triple polling
 
         // Initial fetch
@@ -225,17 +219,19 @@ const fetchAndSend = async (deviceId, pkg, onData) => {
             }
         } catch (err) { }
 
-        // Live Audit Analytics - Performance & Interaction Sampling
+        // Live Audit Analytics - read from monitorEngine telemetry to avoid duplicate ADB calls
         try {
-            const fps = await getFPS(deviceId, pkg);
-            const mem = await getMemory(deviceId, pkg);
+            const monitorEngine = require('./runtime/monitorEngine');
+            const tel = monitorEngine.getTelemetry();
+            const fps = (tel && Number.isFinite(tel.fps) && tel.fps > 0) ? tel.fps : 0;
+            const mem = (tel && Number.isFinite(tel.memory) && tel.memory > 0) ? tel.memory : 0;
 
-            if (memoryAnalyzer) {
+            if (memoryAnalyzer && mem > 0) {
                 memoryAnalyzer.analyze(mem);
             }
             if (gameplayBlockerDetector && gameplayBlockerDetector.data.isActive) {
-                if (Number.isFinite(fps) && fps > 0) gameplayBlockerDetector.recordFps(fps);
-                if (Number.isFinite(mem) && mem > 0) gameplayBlockerDetector.recordPss(mem);
+                if (fps > 0) gameplayBlockerDetector.recordFps(fps);
+                if (mem > 0) gameplayBlockerDetector.recordPss(mem);
             }
         } catch (err) {
             console.error("[RealtimeMonitor] Audit sampling failed:", err.message);
@@ -254,8 +250,6 @@ const stop = (deviceId = null) => {
     permissionInterval = null;
     networkIntelInterval = null;
 
-    // Stop MITM proxy and clean up device proxy settings
-    proxyServer.stop(deviceId).catch(() => {});
 };
 
 const getAdvancedAudit = () => {
@@ -264,14 +258,9 @@ const getAdvancedAudit = () => {
             network: networkAnalyzer ? networkAnalyzer.generateNetworkReport() : { status: "OFF", avgPing: 0 },
             memory: memoryAnalyzer ? memoryAnalyzer.getResult() : { peakMemory: 0, idleMemory: 0, issues: [] },
             runtime: runtimeIntelligence ? runtimeIntelligence.getResult() : {},
-            proxy: {
-                active: proxyServer.isActive(),
-                port: proxyServer.getPort(),
-                intercepted: proxyServer.getIntercepted()
-            }
         };
     } catch (e) {
-        return { network: { history: [] }, memory: { issues: [] }, runtime: {}, proxy: { active: false } };
+        return { network: { history: [] }, memory: { issues: [] }, runtime: {} };
     }
 };
 

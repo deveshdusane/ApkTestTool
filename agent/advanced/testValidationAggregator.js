@@ -120,6 +120,9 @@ function fromPreflight(preflightResult) {
 // ─── Source: Gameplay Blocker Detector (runtime) ──────────────────────────────
 
 // Blocker id → category mapping. Keep in sync with gameplayBlockerDetector ids.
+// splash_stuck is intentionally excluded: it relies on activity naming conventions
+// that are too fragile to surface as an automated finding. It may still appear in
+// the raw blocker list used by reports, but not in the Validation UI.
 const BLOCKER_CATEGORY = {
     crash_play:         'Runtime Stability',
     anr_play:           'Runtime Stability',
@@ -127,7 +130,6 @@ const BLOCKER_CATEGORY = {
     no_ui:              'Runtime Stability',
     oom_kill:           'Runtime Stability',
     low_fps_sustained:  'Performance',
-    splash_stuck:       'Runtime Stability',
     network_loss_play:  'Network Validation',
     auth_failure:       'SDK Integrations'
 };
@@ -137,19 +139,23 @@ const BLOCKER_CONFIDENCE = {
     anr_play:           'Verified',
     native_crash:       'Verified',
     no_ui:              'Runtime Detected',
-    oom_kill:           'Partial',           // heuristic: requires PSS threshold
-    low_fps_sustained:  'Runtime Detected',
-    splash_stuck:       'Partial',           // heuristic: depends on activity naming
+    oom_kill:           'Partial',           // heuristic: requires PSS threshold + process death
+    low_fps_sustained:  'Runtime Detected',  // real FPS samples, not logcat estimates
     network_loss_play:  'Runtime Detected',
     auth_failure:       'Runtime Detected'
 };
+
+// Blockers excluded from automated validation UI (too fragile / naming-convention-based).
+// They still appear in session reports via the raw blocker list.
+const EXCLUDED_BLOCKER_IDS = new Set(['splash_stuck']);
 
 function fromGameplayBlockers(result, sessionRun) {
     if (!result || !result.blockers) return [];
     const items = [];
 
-    // FAIL rows for every detected blocker.
+    // FAIL rows for every detected blocker (skip excluded ones).
     for (const b of result.blockers) {
+        if (EXCLUDED_BLOCKER_IDS.has(b.id)) continue;
         const cat = BLOCKER_CATEGORY[b.id] || 'Runtime Stability';
         items.push(makeItem({
             id: `runtime_${b.id}`,
@@ -230,34 +236,24 @@ function fromRuntimeIntel(intel, sessionRun, sessionCtx) {
     }
 
     // ── Ads SDK lifecycle ──
-    if (sessionCtx?.hasAds || intel.staticAds) {
-        if (ads.status === 'Detected' && ads.count > 0) {
-            items.push(makeItem({
-                id: 'sdk_ads_callback',
-                category: 'SDK Integrations',
-                title: `Ads SDK lifecycle observed (${ads.type || 'detected'})`,
-                description: 'Ad SDK emitted runtime callbacks (load / show / impression). The visual rendering still needs manual confirmation.',
-                status: 'PASS', severity: 'INFO',
-                confidence: 'Needs Manual Validation',
-                evidence: [
-                    `Ad events: ${ads.count}`,
-                    ads.firstEventTime ? `First at ${ads.firstEventTime}s` : null,
-                    Array.isArray(ads.adTypes) && ads.adTypes.length ? `Types: ${ads.adTypes.join(', ')}` : null
-                ].filter(Boolean),
-                source: 'sdk_lifecycle'
-            }));
-        } else if (sessionRun) {
-            items.push(makeItem({
-                id: 'sdk_ads_no_events',
-                category: 'SDK Integrations',
-                title: 'Ad SDK in APK but no ad events fired',
-                description: 'Either no ad was triggered during the session, or the SDK failed to initialise.',
-                status: 'WARN', severity: 'MEDIUM',
-                confidence: 'Runtime Detected',
-                evidence: ['ads.count === 0 over the session.'],
-                source: 'sdk_lifecycle'
-            }));
-        }
+    // Only emit when ad callbacks are actually observed. A missing ad event is not
+    // meaningful — ads require specific gameplay triggers (level complete, timer, etc.)
+    // that a QA session may not hit. Visual confirmation is always required regardless.
+    if ((sessionCtx?.hasAds || intel.staticAds) && ads.status === 'Detected' && ads.count > 0) {
+        items.push(makeItem({
+            id: 'sdk_ads_callback',
+            category: 'SDK Integrations',
+            title: `Ads SDK lifecycle observed (${ads.type || 'detected'})`,
+            description: 'Ad SDK emitted runtime callbacks. Visual rendering still needs manual confirmation.',
+            status: 'PASS', severity: 'INFO',
+            confidence: 'Needs Manual Validation',
+            evidence: [
+                `Ad events: ${ads.count}`,
+                ads.firstEventTime ? `First at ${ads.firstEventTime}s` : null,
+                Array.isArray(ads.adTypes) && ads.adTypes.length ? `Types: ${ads.adTypes.join(', ')}` : null
+            ].filter(Boolean),
+            source: 'sdk_lifecycle'
+        }));
     }
 
     // ── Crashlytics ──
@@ -273,31 +269,20 @@ function fromRuntimeIntel(intel, sessionRun, sessionCtx) {
         }));
     }
 
-    // ── Lifecycle: app reached UI (game_start) ──
-    if (sessionRun) {
-        if (ck.game_start) {
-            const ev = intel.checklistEvidence?.game_start;
-            items.push(makeItem({
-                id: 'lifecycle_game_start',
-                category: 'Runtime Stability',
-                title: 'App reached gameplay (game_start observed)',
-                status: 'PASS', severity: 'INFO',
-                confidence: 'Verified',
-                evidence: [ev ? `Detected at ${ev.time}s — ${ev.evidence}` : 'game_start signal logged.'],
-                source: 'sdk_lifecycle'
-            }));
-        } else {
-            items.push(makeItem({
-                id: 'lifecycle_game_start_missing',
-                category: 'Runtime Stability',
-                title: 'No game_start signal observed',
-                description: 'The session ended without the engine emitting a "game_start" signal. Either the session was too short, or the app never reached active gameplay.',
-                status: 'WARN', severity: 'MEDIUM',
-                confidence: 'Partial',
-                evidence: ['runtimeIntelligence.checklist.game_start === false at session end.'],
-                source: 'sdk_lifecycle'
-            }));
-        }
+    // ── Lifecycle: app reached gameplay (game_start) ──
+    // Only emit when the signal is actually observed. Absence is not meaningful —
+    // most engines only emit this signal if explicitly instrumented to do so.
+    if (sessionRun && ck.game_start) {
+        const ev = intel.checklistEvidence?.game_start;
+        items.push(makeItem({
+            id: 'lifecycle_game_start',
+            category: 'Runtime Stability',
+            title: 'App reached gameplay (game_start observed)',
+            status: 'PASS', severity: 'INFO',
+            confidence: 'Verified',
+            evidence: [ev ? `Detected at ${ev.time}s — ${ev.evidence}` : 'game_start signal logged.'],
+            source: 'sdk_lifecycle'
+        }));
     }
     return items;
 }
@@ -340,10 +325,10 @@ function fromIapEngine(iapData, sessionCtx) {
                 id: 'sdk_iap_unfinalized',
                 category: 'SDK Integrations',
                 title: 'Completed purchase NOT finalised',
-                description: 'Purchase completed but no acknowledge/consume seen within 60 s. Google will auto-refund in 3 days.',
+                description: 'Purchase resolved but no acknowledge/consume seen within the 60s observation window. Could indicate a real bug or a delayed network retry — verify manually.',
                 status: 'FAIL', severity: 'CRITICAL',
-                confidence: 'Verified',
-                evidence: ['purchaseFinalized === MISSING after 60s window.'],
+                confidence: 'Partial',   // timing-window heuristic, not a deterministic guarantee
+                evidence: ['PURCHASED event seen; no acknowledgePurchase/consumeAsync within 60s.'],
                 source: 'sdk_lifecycle'
             }));
         }

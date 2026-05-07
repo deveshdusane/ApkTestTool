@@ -7,8 +7,9 @@
     <title>TestMate AI — Project QA Dashboard</title>
     <meta name="description" content="AI-powered mobile game QA automation tool with project-based organization.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
-        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
         rel="stylesheet">
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -21,7 +22,7 @@
         <aside class="sidebar" id="sidebar">
             <div class="sidebar-header">
                 <div class="logo">
-                    <span class="logo-icon">⚡</span>
+                    <span class="logo-icon" style="font-size: 15px; font-weight: 700; color: #fff; font-family: 'Inter', sans-serif; letter-spacing: -0.01em;">T</span>
                     <span class="logo-text">TestMate <span class="logo-ai">AI</span></span>
                 </div>
                 <p class="logo-sub">Mobile QA Agent</p>
@@ -52,16 +53,60 @@
             </div>
 
             <nav class="sidebar-nav">
-                <button class="nav-item active" data-tab="test" id="nav-test">🧪 Test Session</button>
-                <button class="nav-item" data-tab="runtime" id="nav-runtime">🧠 Runtime Intel</button>
-                <button class="nav-item" data-tab="events" id="nav-events">🕒 Runtime Events</button>
-                <button class="nav-item" data-tab="iap" id="nav-iap">🛒 IAP Validation</button>
-                <button class="nav-item" data-tab="validation" id="nav-validation">✅ Test Validation</button>
-                <button class="nav-item" data-tab="regression" id="nav-regression">🔬 Build Regression</button>
-                <button class="nav-item" data-tab="static" id="nav-static">📁 Static Analysis</button>
-                <button class="nav-item" data-tab="prediction" id="nav-prediction">🔮 Device Prediction</button>
-                <button class="nav-item" data-tab="history" id="nav-history">📂 History</button>
-
+                <button class="nav-item active" data-tab="test" id="nav-test">
+                    <span class="nav-icon">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>
+                    </span>
+                    <span class="nav-label">Test Session</span>
+                </button>
+                <button class="nav-item" data-tab="runtime" id="nav-runtime">
+                    <span class="nav-icon">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                    </span>
+                    <span class="nav-label">Runtime Intel</span>
+                </button>
+                <button class="nav-item" data-tab="events" id="nav-events">
+                    <span class="nav-icon">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    </span>
+                    <span class="nav-label">Runtime Events</span>
+                </button>
+                <button class="nav-item" data-tab="iap" id="nav-iap">
+                    <span class="nav-icon">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+                    </span>
+                    <span class="nav-label">IAP Validation</span>
+                </button>
+                <button class="nav-item" data-tab="validation" id="nav-validation">
+                    <span class="nav-icon">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                    </span>
+                    <span class="nav-label">Test Validation</span>
+                </button>
+                <button class="nav-item" data-tab="regression" id="nav-regression">
+                    <span class="nav-icon">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                    </span>
+                    <span class="nav-label">Build Regression</span>
+                </button>
+                <button class="nav-item" data-tab="static" id="nav-static">
+                    <span class="nav-icon">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+                    </span>
+                    <span class="nav-label">Static Analysis</span>
+                </button>
+                <button class="nav-item" data-tab="prediction" id="nav-prediction">
+                    <span class="nav-icon">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                    </span>
+                    <span class="nav-label">Device Prediction</span>
+                </button>
+                <button class="nav-item" data-tab="history" id="nav-history">
+                    <span class="nav-icon">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h18v18H3z"/><path d="M8 10h8M8 14h5"/></svg>
+                    </span>
+                    <span class="nav-label">History</span>
+                </button>
             </nav>
 
             <div class="sidebar-footer">
@@ -85,163 +130,153 @@
             <section class="tab-panel active" id="tab-test">
                 <div id="project-empty-state" class="empty-project-state"
                     style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; text-align: center; padding-top: 60px;">
-                    <div style="font-size: 64px; margin-bottom: 20px;">📁</div>
-                    <h2 style="font-size: 24px; margin-bottom: 8px;">No Project Selected</h2>
-                    <p style="color: #a1a1aa; margin-bottom: 24px; max-width: 300px;">Please select a project from the
-                        sidebar or create a new one to begin testing.</p>
-                    <button id="empty-state-create-btn" class="btn primary">➕ Create New Project</button>
+                    <div style="width: 56px; height: 56px; border-radius: 14px; background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.2); display: flex; align-items: center; justify-content: center; margin-bottom: 20px;">
+                        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                    </div>
+                    <h2 style="font-size: 18px; font-weight: 600; margin-bottom: 8px;">No Project Selected</h2>
+                    <p style="color: var(--text-2); margin-bottom: 24px; max-width: 300px; font-size: 13px;">Select a project from the sidebar or create a new one to begin testing.</p>
+                    <button id="empty-state-create-btn" class="btn primary">New Project</button>
                 </div>
 
                 <div id="test-content-wrapper" class="hidden">
-                    <div class="page-header"
-                        style="display: flex; justify-content: space-between; align-items: flex-start;">
+                    <div class="page-header">
                         <div>
                             <h1>Test Session</h1>
                             <p class="page-sub">Install an APK and run an automated QA session.</p>
                         </div>
-                        <button id="main-delete-project-btn" class="btn outline danger btn-sm"
-                            style="margin-top: 8px;">🗑 Delete Project</button>
+                        <div class="page-header-actions">
+                            <button id="btn-refresh-monitor" class="btn outline btn-sm" title="Refresh UI (⌘R)" style="display: flex; align-items: center; gap: 6px;">
+                                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M13.65 2.35A8 8 0 1 0 15 8h-2a6 6 0 1 1-1.05-3.35L10 7h5V2l-1.35.35z" fill="currentColor"/></svg>
+                                Refresh
+                            </button>
+                            <div id="running-controls" class="hidden"
+                                style="display: flex; align-items: center; gap: 10px;">
+                                <span id="session-timer"
+                                    style="font-family: 'JetBrains Mono', monospace; color: #22C55E; font-weight: 700; font-size: 13px;">00:00</span>
+                                <button id="stop-btn" class="btn danger btn-sm">■ Stop</button>
+                            </div>
+                            <button id="report-btn" class="btn accent btn-sm hidden">📊 Report</button>
+                            <button id="start-btn" class="btn primary btn-sm" disabled>▶ Start Test</button>
+                            <button id="main-delete-project-btn" class="btn-xs danger" title="Delete Project" style="padding: 5px 8px;">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+                            </button>
+                        </div>
                     </div>
 
-                    <div id="device-status-bar" class="card device-status-card hidden"
-                        style="margin-bottom: 16px; display: flex; gap: 24px; padding: 12px 20px; background: rgba(30, 30, 45, 0.6); border: 1px solid #3f3f46; border-radius: 8px; font-size: 13px;">
-                        <div style="display: flex; align-items: center; gap: 8px;">
-                            <span style="font-size: 16px;">📱</span>
-                            <span style="color: #a1a1aa;">Device:</span>
-                            <span id="status-device-name" style="color: #fff; font-weight: 500;">—</span>
+                    <div id="device-status-bar" class="device-status-card hidden">
+                        <div class="status-item">
+                            <span class="status-icon">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+                            </span>
+                            <span class="status-label">Device</span>
+                            <span id="status-device-name" class="status-value">—</span>
                         </div>
-                        <div style="display: flex; align-items: center; gap: 8px;">
-                            <span style="font-size: 16px;">🤖</span>
-                            <span style="color: #a1a1aa;">Android:</span>
-                            <span id="status-android-version" style="color: #fff; font-weight: 500;">—</span>
+                        <div class="status-item">
+                            <span class="status-icon">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                            </span>
+                            <span class="status-label">Android</span>
+                            <span id="status-android-version" class="status-value">—</span>
                         </div>
-                        <div style="display: flex; align-items: center; gap: 8px;">
-                            <span style="font-size: 16px;">🔋</span>
-                            <span style="color: #a1a1aa;">Battery:</span>
-                            <span id="status-battery-level" style="color: #fff; font-weight: 500;">—</span>
+                        <div class="status-item">
+                            <span class="status-icon">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="18" height="10" rx="2" ry="2"/><line x1="22" y1="11" x2="22" y2="13"/></svg>
+                            </span>
+                            <span class="status-label">Battery</span>
+                            <span id="status-battery-level" class="status-value">—</span>
                         </div>
-                        <div style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
-                            <span style="font-size: 16px;">🔌</span>
-                            <span style="color: #a1a1aa;">Status:</span>
-                            <span id="status-connection" style="color: #2dd4bf; font-weight: 600;">Disconnected</span>
+                        <div class="status-item status-item--right">
+                            <span class="status-dot-live"></span>
+                            <span class="status-label">Status</span>
+                            <span id="status-connection" class="status-value status-value--connected">Disconnected</span>
                         </div>
                     </div>
 
                     <div class="card apk-card" id="drop-zone">
                         <div class="drop-inner">
-                            <div class="drop-icon">📦</div>
+                            <div class="drop-icon">
+                                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                            </div>
                             <p id="drop-text">Drag & Drop APK here</p>
                             <p id="file-name" class="file-name"></p>
                             <button id="browse-btn" class="btn outline">Browse APK</button>
                         </div>
                     </div>
 
-                    <!-- ── AI Settings Card ─────────────────────────────── -->
-                    <div class="card ai-settings-card" id="ai-settings-card"
-                        style="margin-bottom: 14px; padding: 12px 18px; background: rgba(139,92,246,0.06); border: 1px solid rgba(139,92,246,0.2); border-radius: 8px;">
-                        <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-                            <span style="font-size: 15px;">🤖</span>
-                            <span style="font-size: 12px; font-weight: 600; color: #a78bfa; letter-spacing: 0.04em; text-transform: uppercase;">AI Event Classification</span>
-                            <div id="ai-status-badge" style="font-size: 10px; font-weight: 700; padding: 2px 10px; border-radius: 10px; background: rgba(63,63,70,0.6); color: #71717a; letter-spacing: 0.05em;">DISABLED</div>
-                            <div style="flex: 1; min-width: 240px; display: flex; align-items: center; gap: 8px; margin-left: auto;">
-                                <input id="ai-api-key-input" type="password"
-                                    placeholder="Gemini API Key (AIza…)"
-                                    style="flex: 1; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 6px 10px; font-size: 12px; color: #e4e4e7; font-family: 'JetBrains Mono', monospace; outline: none; min-width: 0;" />
-                                <button id="ai-save-btn" class="btn outline" style="padding: 5px 14px; font-size: 11px; white-space: nowrap;">Save Key</button>
+
+                    <div id="live-dashboard" class="card dashboard-card hidden lm-card">
+
+                        <!-- ── Header row ──────────────────────────────── -->
+                        <div class="lm-header">
+                            <div class="lm-title">
+                                <span id="fps-indicator-dot" class="lm-live-dot"></span>
+                                Live Monitoring
                             </div>
-                        </div>
-                        <div id="ai-status-msg" style="font-size: 11px; color: #71717a; margin-top: 6px; display: none;"></div>
-                    </div>
-
-                    <!-- ── Proxy Status Card ────────────────────────────── -->
-                    <div class="card" id="proxy-status-card"
-                        style="margin-bottom: 14px; padding: 11px 18px; background: rgba(45,212,191,0.05); border: 1px solid rgba(45,212,191,0.15); border-radius: 8px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
-                        <span style="font-size: 15px;">🔒</span>
-                        <span style="font-size: 12px; font-weight: 600; color: #2dd4bf; letter-spacing: 0.04em; text-transform: uppercase;">MITM Proxy</span>
-                        <div id="proxy-status-badge" style="font-size: 10px; font-weight: 700; padding: 2px 10px; border-radius: 10px; background: rgba(63,63,70,0.6); color: #71717a; letter-spacing: 0.05em;">INACTIVE</div>
-                        <span id="proxy-intercepted-info" style="font-size: 11px; color: #52525b; display: none;">Port 8877 · <span id="proxy-intercept-count">0</span> events</span>
-                        <div style="margin-left: auto; display: flex; gap: 8px; align-items: center;">
-                            <span id="proxy-cert-hint" style="font-size: 11px; color: #f59e0b; display: none;">⚠ Install CA cert for release builds</span>
-                            <button id="install-cert-btn" class="btn outline" style="padding: 5px 14px; font-size: 11px; white-space: nowrap;">Install CA Cert</button>
-                        </div>
-                    </div>
-
-                    <div class="controls-bar" style="display: flex; align-items: center; gap: 12px;">
-                        <button id="start-btn" class="btn primary" disabled>▶ Start Test</button>
-
-                        <div id="running-controls" class="hidden"
-                            style="display: flex; align-items: center; gap: 16px;">
-                            <span id="session-timer"
-                                style="font-family: 'JetBrains Mono', monospace; color: #2dd4bf; font-weight: bold; font-size: 16px;">00:00</span>
-                            <button id="stop-btn" class="btn danger">■ Stop Test</button>
+                            <span class="lm-window-label">60s window</span>
                         </div>
 
-                        <button id="report-btn" class="btn accent hidden">📊 Generate Report</button>
-                    </div>
-
-                    <div id="live-dashboard" class="card dashboard-card hidden"
-                        style="margin-top: 16px; background-color: #18181b; border: 1px solid #3f3f46;">
-                        <div class="card-header" style="border-bottom: 1px solid #27272a; padding-bottom: 10px;">
-                            <h3 style="color: #2dd4bf; margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: 1px;">
-                                🟢 Live Monitoring</h3>
+                        <!-- ── Stats row ───────────────────────────────── -->
+                        <div class="lm-stats">
+                            <div class="lm-stat">
+                                <div class="lm-stat-label">FPS</div>
+                                <div id="live-fps" class="lm-stat-value lm-stat-big">--</div>
+                            </div>
+                            <div class="lm-stat">
+                                <div class="lm-stat-label">Frame Time</div>
+                                <div class="lm-stat-value">
+                                    <span id="live-frame-time">--</span><span class="lm-unit">ms</span>
+                                </div>
+                            </div>
+                            <div class="lm-stat">
+                                <div class="lm-stat-label">CPU</div>
+                                <div class="lm-stat-value">
+                                    <span id="live-cpu">--%</span>
+                                </div>
+                            </div>
+                            <div class="lm-stat">
+                                <div class="lm-stat-label">Memory</div>
+                                <div class="lm-stat-value">
+                                    <span id="live-memory">--</span><span class="lm-unit"> MB</span>
+                                </div>
+                            </div>
+                            <div class="lm-stat">
+                                <div class="lm-stat-label">Network</div>
+                                <div class="lm-stat-value">
+                                    <span id="live-network">--</span>
+                                    <span class="lm-sep">·</span>
+                                    <span id="live-ping">-- ms</span>
+                                </div>
+                            </div>
                         </div>
-                        <div style="display: flex; gap: 0; padding: 18px 0 12px 0;">
 
-                            <!-- ── Left: FPS Gauge ───────────────────────── -->
-                            <div style="flex: 0 0 160px; display: flex; flex-direction: column; align-items: center; justify-content: center; border-right: 1px solid #27272a; padding: 0 18px; gap: 5px;">
-                                <div style="display: flex; align-items: center; gap: 8px;">
-                                    <div id="fps-indicator-dot" style="width: 9px; height: 9px; border-radius: 50%; background: #3f3f46; flex-shrink: 0;"></div>
-                                    <div id="live-fps" style="font-size: 52px; font-weight: 700; color: #38bdf8; font-family: 'JetBrains Mono', monospace; text-shadow: 0 0 16px rgba(56,189,248,0.4); line-height: 1;">--</div>
-                                </div>
-                                <div style="width: 100px; height: 3px; background: #27272a; border-radius: 2px; overflow: hidden;">
-                                    <div id="fps-bar" style="height: 100%; width: 0%; background: #38bdf8; border-radius: 2px; transition: width 0.6s ease, background 0.6s ease;"></div>
-                                </div>
-                                <div style="font-size: 11px; color: #52525b; text-transform: uppercase; letter-spacing: 1px; margin-top: 2px;">FPS Gauge</div>
-                                <div id="fps-quality-label" style="font-size: 11px; font-weight: 700; padding: 3px 12px; border-radius: 10px; background: rgba(63,63,70,0.5); color: #52525b; transition: all 0.5s ease;">WAITING</div>
-                                <!-- Min / Avg / Peak -->
-                                <div style="display: flex; gap: 14px; margin-top: 8px;">
-                                    <div style="text-align: center;">
-                                        <div style="font-size: 10px; color: #52525b; text-transform: uppercase; letter-spacing: 0.5px;">Min</div>
-                                        <div id="fps-min" style="font-size: 13px; color: #71717a; font-family: 'JetBrains Mono', monospace; font-weight: 600;">--</div>
+                        <!-- ── Full-width chart ────────────────────────── -->
+                        <div class="lm-chart-wrap">
+                            <canvas id="live-fps-chart"></canvas>
+                        </div>
+
+                        <!-- Hidden legacy gauge elements (still updated by app.js) -->
+                        <div style="display:none;">
+                            <div id="fps-bar"></div>
+                            <div id="fps-quality-label"></div>
+                            <div id="fps-min"></div>
+                            <div id="fps-avg"></div>
+                            <div id="fps-peak"></div>
+                            <div id="live-device"></div>
+                            <div id="status-battery-live"></div>
+                        </div>
+
+                        <!-- ── Session Milestone Tracker ──────────────── -->
+                        <div id="session-milestones" style="border-top: 1px solid var(--border); padding: 14px 20px 12px;">
+                            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+                                <div style="font-size: 11px; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.07em; font-weight: 600;">Session Progress</div>
+                                <div style="display: flex; align-items: center; gap: 10px;">
+                                    <div style="width: 80px; height: 3px; background: var(--border); border-radius: 2px; overflow: hidden;">
+                                        <div id="session-milestones-bar" style="height: 100%; width: 0%; background: var(--primary); border-radius: 2px; transition: width 0.6s ease;"></div>
                                     </div>
-                                    <div style="text-align: center;">
-                                        <div style="font-size: 10px; color: #52525b; text-transform: uppercase; letter-spacing: 0.5px;">Avg</div>
-                                        <div id="fps-avg" style="font-size: 13px; color: #a1a1aa; font-family: 'JetBrains Mono', monospace; font-weight: 600;">--</div>
-                                    </div>
-                                    <div style="text-align: center;">
-                                        <div style="font-size: 10px; color: #52525b; text-transform: uppercase; letter-spacing: 0.5px;">Peak</div>
-                                        <div id="fps-peak" style="font-size: 13px; color: #71717a; font-family: 'JetBrains Mono', monospace; font-weight: 600;">--</div>
-                                    </div>
+                                    <span id="session-milestones-pct" style="font-size: 11px; color: var(--text-3); font-family: 'JetBrains Mono', monospace; min-width: 34px; text-align: right;">0%</span>
                                 </div>
                             </div>
-
-                            <!-- ── Middle: Chart + Stats ─────────────────── -->
-                            <div style="flex: 1; display: flex; flex-direction: column; gap: 10px; padding: 0 20px;">
-                                <div style="position: relative; height: 100px;">
-                                    <div style="position: absolute; top: 0; left: 0; font-size: 10px; color: #52525b; text-transform: uppercase; letter-spacing: 0.5px; z-index: 1;">FPS · 60s window</div>
-                                    <canvas id="live-fps-chart" style="margin-top: 16px;"></canvas>
-                                </div>
-                            </div>
-
-                            <!-- ── Right: Network + Device + Battery ──────── -->
-                            <div style="flex: 0 0 180px; display: flex; flex-direction: column; justify-content: center; gap: 14px; padding-left: 20px; border-left: 1px solid #27272a;">
-                                <div>
-                                    <div style="font-size: 11px; color: #71717a; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">Network Status</div>
-                                    <div style="display: flex; align-items: baseline; gap: 8px;">
-                                        <div id="live-network" style="color: #e879f9; font-weight: 700; font-size: 16px;">--</div>
-                                        <div id="live-ping" style="color: #60a5fa; font-size: 13px; font-weight: 600;">-- ms</div>
-                                    </div>
-                                </div>
-                                <div>
-                                    <div style="font-size: 11px; color: #71717a; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">Target Device</div>
-                                    <div id="live-device" style="color: #fbbf24; font-weight: 600; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">--</div>
-                                </div>
-                                <div>
-                                    <div style="font-size: 11px; color: #71717a; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">Battery</div>
-                                    <div id="status-battery-live" style="color: #4ade80; font-weight: 600; font-size: 13px; font-family: 'JetBrains Mono', monospace;">--%</div>
-                                </div>
-                            </div>
-
+                            <div id="session-milestones-list" class="ms-track"></div>
                         </div>
                     </div>
 
@@ -277,9 +312,11 @@
                 </div>
 
                 <div id="runtime-empty-state" class="empty-project-state" style="padding: 40px; text-align: center;">
-                    <div style="font-size: 48px; margin-bottom: 15px;">🧠</div>
-                    <h3>Waiting for Test Session</h3>
-                    <p style="color: #a1a1aa;">Start a test session to begin capturing runtime intelligence data.</p>
+                    <div style="width: 48px; height: 48px; border-radius: 12px; background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.2); display: flex; align-items: center; justify-content: center; margin: 0 auto 16px;">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                    </div>
+                    <h3 style="font-size: 16px; font-weight: 600; margin-bottom: 8px;">Waiting for Test Session</h3>
+                    <p style="color: var(--text-2); font-size: 13px;">Start a test session to begin capturing runtime intelligence data.</p>
                 </div>
 
                 <div id="runtime-content" class="hidden">
@@ -580,9 +617,11 @@
                 </div>
 
                 <div id="events-empty-state" class="empty-project-state" style="padding: 40px; text-align: center;">
-                    <div style="font-size: 48px; margin-bottom: 15px;">🕒</div>
-                    <h3>Waiting for Test Session</h3>
-                    <p style="color: #a1a1aa;">Start a test session to capture live runtime events.</p>
+                    <div style="width: 48px; height: 48px; border-radius: 12px; background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.2); display: flex; align-items: center; justify-content: center; margin: 0 auto 16px;">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    </div>
+                    <h3 style="font-size: 16px; font-weight: 600; margin-bottom: 8px;">Waiting for Test Session</h3>
+                    <p style="color: var(--text-2); font-size: 13px;">Start a test session to capture live runtime events.</p>
                 </div>
 
                 <div id="events-content" class="hidden">
@@ -659,9 +698,11 @@
                 </div>
 
                 <div id="iap-empty-state" class="empty-project-state">
-                    <div style="font-size: 48px; margin-bottom: 15px;">🛒</div>
-                    <h3>Start IAP Test Mode</h3>
-                    <p style="color: #a1a1aa; max-width: 400px; margin: 0 auto 20px;">Deploy an APK and perform a manual purchase on the device. TestMate will monitor the system signals for verification.</p>
+                    <div style="width: 48px; height: 48px; border-radius: 12px; background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.2); display: flex; align-items: center; justify-content: center; margin: 0 auto 16px;">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+                    </div>
+                    <h3 style="font-size: 16px; font-weight: 600; margin-bottom: 8px;">Start IAP Test Mode</h3>
+                    <p style="color: var(--text-2); max-width: 400px; margin: 0 auto 20px; font-size: 13px;">Deploy an APK and perform a manual purchase on the device. TestMate will monitor the system signals for verification.</p>
                     <button id="iap-start-btn" class="btn primary">Start IAP Test</button>
                 </div>
 
@@ -851,9 +892,11 @@
                 </div>
 
                 <div id="reg-empty" class="empty-project-state" style="margin-top: 24px;">
-                    <div style="font-size: 48px; margin-bottom: 15px;">🔬</div>
-                    <h3>Drop two APKs above to see regression diff</h3>
-                    <p style="font-size: 12px; color: var(--text-muted);">Reports size, version, permissions, SDKs, manifest flags, security risk, and FPS/memory/crash deltas.</p>
+                    <div style="width: 48px; height: 48px; border-radius: 12px; background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.2); display: flex; align-items: center; justify-content: center; margin: 0 auto 16px;">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                    </div>
+                    <h3 style="font-size: 16px; font-weight: 600; margin-bottom: 8px;">Drop two APKs above to see regression diff</h3>
+                    <p style="font-size: 13px; color: var(--text-2);">Reports size, version, permissions, SDKs, manifest flags, security risk, and FPS/memory/crash deltas.</p>
                 </div>
 
                 <div id="reg-results" class="hidden"></div>
@@ -867,10 +910,11 @@
                 </div>
 
                 <div id="static-empty-state" class="empty-project-state" style="padding: 40px; text-align: center;">
-                    <div style="font-size: 48px; margin-bottom: 15px;">📊</div>
-                    <h3>No APK Analyzed</h3>
-                    <p style="color: #a1a1aa;">Upload an APK in the Test Session tab to view static analysis results.
-                    </p>
+                    <div style="width: 48px; height: 48px; border-radius: 12px; background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.2); display: flex; align-items: center; justify-content: center; margin: 0 auto 16px;">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+                    </div>
+                    <h3 style="font-size: 16px; font-weight: 600; margin-bottom: 8px;">No APK Analyzed</h3>
+                    <p style="color: var(--text-2); font-size: 13px;">Upload an APK in the Test Session tab to view static analysis results.</p>
                 </div>
 
                 <div id="static-content" class="hidden">
@@ -1010,10 +1054,11 @@
                 </div>
 
                 <div id="prediction-empty-state" class="empty-project-state" style="padding: 40px; text-align: center;">
-                    <div style="font-size: 48px; margin-bottom: 15px;">🔮</div>
-                    <h3>Waiting for Telemetry</h3>
-                    <p style="color: #a1a1aa;">Start a test session to view live cross-device performance predictions.
-                    </p>
+                    <div style="width: 48px; height: 48px; border-radius: 12px; background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.2); display: flex; align-items: center; justify-content: center; margin: 0 auto 16px;">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                    </div>
+                    <h3 style="font-size: 16px; font-weight: 600; margin-bottom: 8px;">Waiting for Telemetry</h3>
+                    <p style="color: var(--text-2); font-size: 13px;">Start a test session to view live cross-device performance predictions.</p>
                 </div>
 
                 <div id="prediction-content" class="hidden">

@@ -57,7 +57,7 @@ class PerformanceMonitor {
         try {
             const output = await adbHelper.runADB(['shell', 'dumpsys', 'meminfo', this.package]);
             // Extract "TOTAL" PSS memory (More robust regex)
-            const match = output.match(/TOTAL[:\s]+\s+(\d+)/i) || output.match(/TOTAL\s+PSS:\s+(\d+)/i);
+            const match = output.match(/TOTAL\s+PSS:\s*(\d+)/i) || output.match(/TOTAL:\s*(\d+)/i) || output.match(/TOTAL\s+(\d+)/i);
             if (match) {
                 const memoryMB = Math.round(parseInt(match[1]) / 1024);
                 if (memoryMB > 0) this.data.memory.push(memoryMB);

@@ -25,9 +25,8 @@ class MemoryAnalyzer {
             this.peakMemory = currentMemory;
         }
 
-        // Track Idle (first 5-6 seconds)
-        // If we are within the first 6 seconds, update idle memory
-        if (Date.now() - this.startTime <= 6000) {
+        // Track Idle (first 15 seconds — games with Firebase/Adjust need ~10s to finish SDK init)
+        if (Date.now() - this.startTime <= 15000) {
             this.idleMemory = currentMemory;
         }
 

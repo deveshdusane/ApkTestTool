@@ -101,7 +101,7 @@ function generateBugReports(issues) {
 
     return issues.map(issue => {
         const template = BUG_TEMPLATES[issue.type] || BUG_TEMPLATES['Generic'];
-        
+
         return {
             title: template.title,
             priority: issue.priority,

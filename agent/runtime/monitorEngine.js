@@ -132,7 +132,7 @@ async function mediumLoop() {
             const batteryData = await adbHelper.runADB(['-s', currentDeviceId, 'shell', 'dumpsys', 'battery']);
             const levelMatch = batteryData.match(/level:\s+(\d+)/);
             if (levelMatch) {
-                telemetry.battery = levelMatch[1];
+                telemetry.battery = parseInt(levelMatch[1]);
             }
         }
     } catch (e) {
@@ -300,22 +300,42 @@ async function getFPSData() {
 
     // ── Method 3: SurfaceFlinger compositor FPS (Unity/Unreal/native games) ──
     // Handles multiple Android versions: Android 10 (fps=X), 11 (fps = X),
-    // 12+ (fps: X / averageFPS=X). The wider grep catches all known formats.
+    // 12+ (fps: X / averageFPS=X). Uses -A 15 context lines and a longer timeout.
     try {
         const sfOut = await adbHelper.runADB([
             '-s', currentDeviceId, 'shell',
-            `dumpsys SurfaceFlinger | grep -E -i "${currentPackage}" -A 8 | grep -E -i "fps" | head -5`
-        ], { timeout: 3000 });
+            `dumpsys SurfaceFlinger | grep -E -i "${currentPackage}" -A 15 | grep -E -i "fps" | head -5`
+        ], { timeout: 5000 });
 
         if (sfOut && sfOut.trim()) {
-            // Match fps=X, fps: X, fps = X, averageFPS=X (all common formats)
             const m = sfOut.match(/(?:average)?fps[: =]+([\d.]+)/i);
             if (m) {
                 const fps = Math.min(120, Math.max(1, Math.round(parseFloat(m[1]))));
-                if (fps > 1) { // 1 FPS from SurfaceFlinger usually means idle/no data
+                if (fps > 1) {
                     lastFPS = fps;
                     return { fps, jank: 0, jankPct: telemetry.jankPct || 0, stability: telemetry.stability || 1.0 };
                 }
+            }
+        }
+    } catch (e) { /* fall through */ }
+
+    // ── Method 3b: Broad SurfaceFlinger fps scan (catches Unity/GL when package grep misses) ──
+    // Grabs ALL fps values reported by SurfaceFlinger and picks the highest (likely the game).
+    try {
+        const sfBroad = await adbHelper.runADB([
+            '-s', currentDeviceId, 'shell',
+            `dumpsys SurfaceFlinger | grep -E "averageFPS|fps[ :=]" | head -15`
+        ], { timeout: 5000 });
+
+        if (sfBroad && sfBroad.trim()) {
+            const matches = [...sfBroad.matchAll(/(?:average)?fps[: =]+([\d.]+)/gi)];
+            const validFps = matches
+                .map(m => Math.round(parseFloat(m[1])))
+                .filter(f => f > 1 && f <= 120);
+            if (validFps.length > 0) {
+                const fps = Math.max(...validFps);
+                lastFPS = fps;
+                return { fps, jank: 0, jankPct: telemetry.jankPct || 0, stability: telemetry.stability || 1.0 };
             }
         }
     } catch (e) { /* fall through */ }
@@ -345,7 +365,7 @@ async function getMemory() {
             currentPackage
         ], { timeout: 5000 });
 
-        const match = out.match(/TOTAL[:\s]+\s+(\d+)/i) || out.match(/TOTAL\s+PSS:\s+(\d+)/i);
+        const match = out.match(/TOTAL\s+PSS:\s*(\d+)/i) || out.match(/TOTAL:\s*(\d+)/i) || out.match(/TOTAL\s+(\d+)/i);
         return match ? Math.round(parseInt(match[1]) / 1024) : 0;
     } catch {
         return 0;

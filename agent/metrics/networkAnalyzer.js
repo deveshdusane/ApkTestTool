@@ -4,7 +4,9 @@ const gameplayBlockerDetector = require('../advanced/gameplayBlockerDetector');
 
 let pingSamples = [];
 let totalDataUsed = 0;
-let disconnectCount = 0;
+let disconnectCount = 0;       // ping-based: 100% packet loss / unreachable
+let logcatDropCount = 0;       // logcat-based: network keyword events (debounced)
+let _lastLogcatDropAt = 0;     // timestamp of last logcat drop record (for 15s debounce)
 let lastRx = 0;
 let lastTx = 0;
 
@@ -32,7 +34,10 @@ function startPingTracking(deviceId) {
         }
       }
     } catch (err) {
-      disconnectCount++;
+      // ADB command error — only count if it looks like real unreachability
+      if (err && (String(err.message).includes('unreachable') || String(err.message).includes('timeout'))) {
+        disconnectCount++;
+      }
     }
     if (gameplayBlockerDetector && gameplayBlockerDetector.data.isActive) {
       gameplayBlockerDetector.recordPing(success);
@@ -128,12 +133,19 @@ function startNetworkDropDetection(deviceId, packageName) {
       // Only count drops that appear in lines referencing our package, or on lines
       // immediately following a line that references our package (stack traces).
       const lines = output.split('\n');
+      const nowMs = Date.now();
       let prevLineWasOurs = false;
       for (const line of lines) {
         const isOurLine = !packageName || line.includes(packageName);
         if (isOurLine || prevLineWasOurs) {
           if (dropKeywords.some(kw => line.includes(kw))) {
-            disconnectCount++;
+            // Debounce to one logcat drop event per 15 s — a single disconnect
+            // typically floods several log lines.
+            if (nowMs - _lastLogcatDropAt > 15000) {
+              logcatDropCount++;
+              _lastLogcatDropAt = nowMs;
+            }
+            break;
           }
         }
         prevLineWasOurs = isOurLine;
@@ -169,7 +181,7 @@ function generateNetworkReport() {
   return {
     avgPing,
     dataUsedMB: dataMB,
-    disconnects: Math.floor(disconnectCount / 2), // Normalized as some drops report multiple logs
+    disconnects: disconnectCount + logcatDropCount,
     status
   };
 }
@@ -190,6 +202,8 @@ function reset() {
   pingSamples = [];
   totalDataUsed = 0;
   disconnectCount = 0;
+  logcatDropCount = 0;
+  _lastLogcatDropAt = 0;
   lastRx = 0;
   lastTx = 0;
 }

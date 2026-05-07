@@ -106,6 +106,7 @@ const browseBtn = document.getElementById('browse-btn');
 const startBtn = document.getElementById('start-btn');
 const stopBtn = document.getElementById('stop-btn');
 const reportBtn = document.getElementById('report-btn');
+const refreshMonitorBtn = document.getElementById('btn-refresh-monitor');
 
 const logsContainer = document.getElementById('status-logs');
 const liveDashboard = document.getElementById('live-dashboard');
@@ -195,154 +196,6 @@ const exportedComponentsList = document.getElementById('exported-components-list
 const securityDebugStatus = document.getElementById('security-debug-status');
 const securityBackupStatus = document.getElementById('security-backup-status');
 const securityCleartextStatus = document.getElementById('security-cleartext-status');
-
-// ─── AI SETTINGS ─────────────────────────────────────────────────────────────
-const aiApiKeyInput   = document.getElementById('ai-api-key-input');
-const aiSaveBtn       = document.getElementById('ai-save-btn');
-const aiStatusBadge   = document.getElementById('ai-status-badge');
-const aiStatusMsg     = document.getElementById('ai-status-msg');
-
-function updateAIStatusBadge(hasKey) {
-    if (!aiStatusBadge) return;
-    if (hasKey) {
-        aiStatusBadge.textContent = 'ENABLED';
-        aiStatusBadge.style.background = 'rgba(74,222,128,0.12)';
-        aiStatusBadge.style.color = '#4ade80';
-    } else {
-        aiStatusBadge.textContent = 'DISABLED';
-        aiStatusBadge.style.background = 'rgba(63,63,70,0.6)';
-        aiStatusBadge.style.color = '#71717a';
-    }
-}
-
-(async () => {
-    try {
-        const settings = await window.api.getSettings();
-        if (settings && settings.geminiApiKey) {
-            if (aiApiKeyInput) aiApiKeyInput.value = settings.geminiApiKey;
-            updateAIStatusBadge(true);
-        }
-    } catch (e) {}
-})();
-
-if (aiSaveBtn) {
-    aiSaveBtn.addEventListener('click', async () => {
-        const key = aiApiKeyInput ? aiApiKeyInput.value.trim() : '';
-        const res = await window.api.saveSettings({ geminiApiKey: key });
-        if (res && res.success) {
-            updateAIStatusBadge(!!key);
-            if (aiStatusMsg) {
-                aiStatusMsg.style.display = '';
-                aiStatusMsg.textContent = key ? '✔ API key saved. AI classification is active.' : 'API key cleared.';
-                aiStatusMsg.style.color = key ? '#4ade80' : '#a1a1aa';
-                setTimeout(() => { if (aiStatusMsg) aiStatusMsg.style.display = 'none'; }, 3000);
-            }
-        }
-    });
-}
-
-// ─── PROXY STATUS (PHASE 3) ──────────────────────────────────────────────────
-const proxyStatusBadge    = document.getElementById('proxy-status-badge');
-const proxyInterceptInfo  = document.getElementById('proxy-intercepted-info');
-const proxyInterceptCount = document.getElementById('proxy-intercept-count');
-const proxyCertHint       = document.getElementById('proxy-cert-hint');
-const installCertBtn      = document.getElementById('install-cert-btn');
-
-function updateProxyUI(status) {
-    if (!proxyStatusBadge) return;
-    if (status && status.active) {
-        proxyStatusBadge.textContent = 'ACTIVE';
-        proxyStatusBadge.style.background = 'rgba(45,212,191,0.15)';
-        proxyStatusBadge.style.color = '#2dd4bf';
-        if (proxyInterceptInfo) proxyInterceptInfo.style.display = '';
-        if (proxyInterceptCount) proxyInterceptCount.textContent = status.intercepted || 0;
-        if (proxyCertHint) proxyCertHint.style.display = status.certExists ? 'none' : '';
-    } else {
-        proxyStatusBadge.textContent = 'INACTIVE';
-        proxyStatusBadge.style.background = 'rgba(63,63,70,0.6)';
-        proxyStatusBadge.style.color = '#71717a';
-        if (proxyInterceptInfo) proxyInterceptInfo.style.display = 'none';
-        if (status && status.lastError) {
-            if (proxyCertHint) {
-                proxyCertHint.style.display = '';
-                proxyCertHint.textContent = `⚠ Proxy error: ${status.lastError}`;
-            }
-            if (status.lastError !== _proxyLastError) {
-                _proxyLastError = status.lastError;
-                addLog(`⚠ MITM Proxy inactive: ${status.lastError}`, 'warn');
-            }
-        }
-    }
-}
-
-// Poll proxy status every 4 seconds when session is running
-let _proxyPollInterval = null;
-let _proxyLastError = null;
-function startProxyPoll() {
-    if (_proxyPollInterval) return;
-    // Check once after 1.5s to show proxy status right after session starts
-    setTimeout(async () => {
-        try {
-            const s = await window.api.getProxyStatus();
-            updateProxyUI(s);
-        } catch {}
-    }, 1500);
-    _proxyPollInterval = setInterval(async () => {
-        try {
-            const s = await window.api.getProxyStatus();
-            updateProxyUI(s);
-            if (proxyInterceptCount && s) proxyInterceptCount.textContent = s.intercepted || 0;
-        } catch {}
-    }, 4000);
-}
-function stopProxyPoll() {
-    if (_proxyPollInterval) { clearInterval(_proxyPollInterval); _proxyPollInterval = null; }
-    _proxyLastError = null;
-    updateProxyUI({ active: false });
-}
-
-function showCertInstallGuide() {
-    const guide = document.getElementById('cert-install-guide');
-    if (guide) { guide.style.display = ''; return; }
-
-    // Create the guide div dynamically and insert after the proxy card
-    const card = document.getElementById('proxy-status-card');
-    if (!card) return;
-    const div = document.createElement('div');
-    div.id = 'cert-install-guide';
-    div.style.cssText = 'margin-bottom:12px;padding:10px 16px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.25);border-radius:8px;font-size:11px;color:#d4a017;line-height:1.7;';
-    div.innerHTML =
-        '<b>📱 Cert saved to device Internal Storage → testmate-ca.crt</b><br>' +
-        'Install it as a CA certificate:<br>' +
-        '<b>Samsung:</b> Settings → Biometrics &amp; Security → Other Security Settings → Install from Device Storage<br>' +
-        '<b>Pixel / Stock Android:</b> Settings → Security → Encryption &amp; Credentials → Install a Certificate → CA Certificate<br>' +
-        '<b>Xiaomi / MIUI:</b> Settings → Privacy → Encryption &amp; Credentials → Install a Certificate<br>' +
-        '<small style="color:#a16207">Select <em>testmate-ca.crt</em> from Internal Storage and name it "TestMate AI"</small>';
-    card.insertAdjacentElement('afterend', div);
-}
-
-if (installCertBtn) {
-    installCertBtn.addEventListener('click', async () => {
-        installCertBtn.disabled = true;
-        installCertBtn.textContent = 'Installing…';
-        try {
-            const res = await window.api.installCACert();
-            if (res.success) {
-                if (res.result === 'installed') {
-                    installCertBtn.textContent = '✔ Installed';
-                    if (proxyCertHint) proxyCertHint.style.display = 'none';
-                } else {
-                    installCertBtn.textContent = '✔ Cert Pushed';
-                    showCertInstallGuide();
-                }
-            } else {
-                installCertBtn.textContent = 'Failed';
-                addLog(`❌ CA cert install failed: ${res.message}`, 'error');
-            }
-        } catch { installCertBtn.textContent = 'Error'; }
-        setTimeout(() => { installCertBtn.textContent = 'Install CA Cert'; installCertBtn.disabled = false; }, 4000);
-    });
-}
 
 // ─── TAB NAVIGATION ──────────────────────────────────────────────────────────
 navBtns.forEach(btn => {
@@ -747,17 +600,92 @@ function startTimer() {
     stopTimer();
     secondsElapsed = 0;
     sessionTimer.textContent = '00:00';
+    resetMilestones();
     timerInterval = setInterval(() => {
         secondsElapsed++;
         const mins = Math.floor(secondsElapsed / 60).toString().padStart(2, '0');
         const secs = (secondsElapsed % 60).toString().padStart(2, '0');
         sessionTimer.textContent = `${mins}:${secs}`;
+        tickMilestones(secondsElapsed);
     }, 1000);
 }
 
 function stopTimer() {
     if (timerInterval) clearInterval(timerInterval);
     timerInterval = null;
+}
+
+// ─── SESSION MILESTONES ───────────────────────────────────────────────────────
+
+const SESSION_MILESTONES = [
+    { id: 'launch',   secs: 30,   label: 'Launch verified', detail: 'No crash in first 30s' },
+    { id: 'sdk',      secs: 60,   label: 'SDK init',        detail: 'Firebase / analytics SDKs' },
+    { id: 'network',  secs: 180,  label: 'Network active',  detail: 'First analytics calls' },
+    { id: 'memory',   secs: 180,  label: 'Memory baseline', detail: 'Stable PSS established' },
+    { id: 'leak',     secs: 600,  label: 'Leak detection',  detail: '10-min memory trend' },
+    { id: 'complete', secs: 1200, label: 'Full coverage',   detail: 'All checks complete' },
+];
+
+let _milestoneState = {};
+
+function resetMilestones() {
+    SESSION_MILESTONES.forEach(m => { _milestoneState[m.id] = 'pending'; });
+    renderMilestones();
+}
+
+function tickMilestones(secs, signals = {}) {
+    let changed = false;
+    for (const m of SESSION_MILESTONES) {
+        if (_milestoneState[m.id] === 'done') continue;
+
+        // Signal-based early completion
+        if (m.id === 'sdk' && signals.hasSdkData && _milestoneState[m.id] !== 'done') {
+            _milestoneState[m.id] = 'done'; changed = true; continue;
+        }
+        if (m.id === 'network' && signals.hasNetwork && _milestoneState[m.id] !== 'done') {
+            _milestoneState[m.id] = 'done'; changed = true; continue;
+        }
+
+        // Time-based completion
+        if (secs >= m.secs) {
+            _milestoneState[m.id] = 'done'; changed = true; continue;
+        }
+
+        // Approaching: pulsing dot when within 30s of milestone
+        const prev = _milestoneState[m.id];
+        const next = secs >= m.secs - 30 ? 'active' : 'pending';
+        if (prev !== next) { _milestoneState[m.id] = next; changed = true; }
+    }
+    if (changed) renderMilestones();
+}
+
+function renderMilestones() {
+    const list = document.getElementById('session-milestones-list');
+    if (!list) return;
+
+    const done = SESSION_MILESTONES.filter(m => _milestoneState[m.id] === 'done').length;
+    const pct  = Math.round((done / SESSION_MILESTONES.length) * 100);
+
+    list.innerHTML = SESSION_MILESTONES.map(m => {
+        const state = _milestoneState[m.id] || 'pending';
+        const mins  = Math.floor(m.secs / 60);
+        const secs  = m.secs % 60;
+        const t     = mins > 0 ? (secs > 0 ? `${mins}:${String(secs).padStart(2,'0')}` : `${mins}m`) : `${m.secs}s`;
+        const dotCls = state === 'done' ? 'ms-dot ms-dot--done'
+                     : state === 'active' ? 'ms-dot ms-dot--active'
+                     : 'ms-dot';
+        const rowCls = `ms-row ms-row--${state}`;
+        return `<div class="${rowCls}" title="${m.detail}">
+            <span class="${dotCls}"></span>
+            <span class="ms-time">${t}</span>
+            <span class="ms-label">${m.label}</span>
+        </div>`;
+    }).join('');
+
+    const bar = document.getElementById('session-milestones-bar');
+    if (bar) bar.style.width = `${pct}%`;
+    const pctEl = document.getElementById('session-milestones-pct');
+    if (pctEl) pctEl.textContent = pct >= 100 ? '✓ Done' : `${pct}%`;
 }
 
 // ─── SESSION CONTROL ─────────────────────────────────────────────────────────
@@ -769,22 +697,15 @@ startBtn.addEventListener('click', async () => {
     if (reportContainer) reportContainer.classList.add('hidden');
     liveDashboard.classList.remove('hidden');
     liveIssuesPanel.classList.add('hidden');
-    liveFps.textContent = '--';
-    liveNetwork.textContent = '--';
-    liveDevice.textContent = '--';
+    if (liveFps) { liveFps.textContent = '--'; liveFps.style.color = ''; }
+    if (liveNetwork) liveNetwork.textContent = '--';
+    if (liveDevice) liveDevice.textContent = '--';
     if (livePing) livePing.textContent = '-- ms';
-    const _battLive = document.getElementById('status-battery-live');
-    if (_battLive) _battLive.textContent = '--%';
-    // Reset FPS tracker for new session
+    ['live-frame-time','live-cpu','live-memory'].forEach(id => {
+        const el = document.getElementById(id); if (el) el.textContent = '--';
+    });
     window._fpsTracker = null;
-    const _fpsResetEls = ['fps-min', 'fps-avg', 'fps-peak'];
-    _fpsResetEls.forEach(id => { const el = document.getElementById(id); if (el) el.textContent = '--'; });
-    const _ql = document.getElementById('fps-quality-label');
-    if (_ql) { _ql.textContent = 'WAITING'; _ql.style.color = '#52525b'; _ql.style.background = 'rgba(63,63,70,0.5)'; }
-    const _bar = document.getElementById('fps-bar');
-    if (_bar) _bar.style.width = '0%';
-    const _dot = document.getElementById('fps-indicator-dot');
-    if (_dot) { _dot.style.background = '#3f3f46'; _dot.style.boxShadow = 'none'; }
+    ['fps-min','fps-avg','fps-peak'].forEach(id => { const el = document.getElementById(id); if (el) el.textContent = '--'; });
     initLiveChart();
 
     // Fetch device info once per session
@@ -813,7 +734,6 @@ startBtn.addEventListener('click', async () => {
     if (res.success) {
         addLog(res.message, 'success');
         updateSessionState('running');
-        startProxyPoll();
 
         // Reset Global Session State
         currentSession.runtime = null;
@@ -831,6 +751,18 @@ startBtn.addEventListener('click', async () => {
     }
 });
 
+if (refreshMonitorBtn) {
+    refreshMonitorBtn.addEventListener('click', () => location.reload());
+    refreshMonitorBtn.addEventListener('mouseenter', () => {
+        refreshMonitorBtn.style.background = '#3f3f46';
+        refreshMonitorBtn.style.color = '#e4e4e7';
+    });
+    refreshMonitorBtn.addEventListener('mouseleave', () => {
+        refreshMonitorBtn.style.background = '#27272a';
+        refreshMonitorBtn.style.color = '#a1a1aa';
+    });
+}
+
 stopBtn.addEventListener('click', async () => {
     addLog('ℹ Stopping session…', 'info');
     stopBtn.disabled = true;
@@ -842,7 +774,6 @@ stopBtn.addEventListener('click', async () => {
 
     const res = await window.api.stopTest();
     stopBtn.textContent = originalText;
-    stopProxyPoll();
 
     if (res.success) {
         addLog(res.message, 'success');
@@ -932,28 +863,31 @@ async function refreshHistory() {
         console.log('Sorted history count:', sortedHistory.length);
 
         sortedHistory.forEach(item => {
-            const summary = getSummaryText(item);
             const failed = isSessionFailed(item);
+            const summary = getSummaryText(item);
             const warning = !failed && summary.toLowerCase().includes('instability');
-            const dot = failed ? '🔴' : warning ? '🟡' : '🟢';
-            const status = failed ? 'FAIL' : warning ? 'WARNING' : 'PASS';
+            const statusColor = failed ? '#ef4444' : warning ? '#f59e0b' : '#22c55e';
+            const statusLabel = failed ? 'FAIL' : warning ? 'WARN' : 'PASS';
             const apkName = item.apkName || item.packageName || 'Unknown APK';
             const dateTime = formatSessionDate(item.timestamp);
+            const durationStr = item.duration ? `${Math.floor(item.duration / 60)}m ${item.duration % 60}s` : '';
+            const avgFPS = item.metrics?.avgFPS || 0;
 
             const div = document.createElement('div');
             div.className = 'history-item';
             div.style.position = 'relative';
             div.innerHTML = `
-                <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-                    <h4>${dot} ${item.sessionId || `Session #${item.index}`}</h4>
-                    <button class="delete-session-btn btn-xs ghost" title="Delete session" style="opacity: 0.5;">🗑</button>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                    <div style="font-size:12px;font-weight:600;color:#e4e4e7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:155px;">${escapeHtml(apkName)}</div>
+                    <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+                        <span style="font-size:9px;font-weight:700;color:${statusColor};background:${statusColor}18;padding:2px 7px;border-radius:10px;">${statusLabel}</span>
+                        <button class="delete-session-btn" title="Delete session" style="background:none;border:none;cursor:pointer;color:#52525b;padding:0;line-height:1;display:flex;align-items:center;">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+                        </button>
+                    </div>
                 </div>
-                <p style="margin-top: 4px; opacity: 0.8; font-size: 13px;">${dateTime}</p>
-                <p style="margin-top: 4px; opacity: 0.8; font-size: 13px;">${apkName}</p>
-                <div style="display: flex; justify-content: space-between; gap: 10px; margin-top: 8px; align-items: center;">
-                    <span class="metric" style="font-size: 10px; background: ${failed ? 'rgba(239,68,68,0.12)' : warning ? 'rgba(251,191,36,0.12)' : 'rgba(45,212,191,0.12)'}; color: ${failed ? '#fca5a5' : warning ? '#fde047' : '#2dd4bf'};">${status}</span>
-                    <span style="font-size: 11px; color: #71717a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${summary || 'Report available'}</span>
-                </div>
+                <div style="font-size:10px;color:#52525b;">${dateTime}${durationStr ? ' · ' + durationStr : ''}</div>
+                ${avgFPS > 0 ? `<div style="font-size:10px;color:#3f3f46;margin-top:2px;">${avgFPS} FPS avg</div>` : ''}
             `;
 
             const delBtn = div.querySelector('.delete-session-btn');
@@ -980,12 +914,235 @@ async function loadHistoryItem(sessionId, el) {
     el.classList.add('active');
 
     historyDetail.innerHTML = '<p class="empty-state">Loading…</p>';
-    const report = await window.api.getSessionReport(activeProject, sessionId);
-    if (report) {
-        historyDetail.innerHTML = `<div class="empty-state">Report visualization is currently disabled.</div>`;
-    } else {
+    const r = await window.api.getSessionReport(activeProject, sessionId);
+    if (!r) {
         historyDetail.innerHTML = '<p class="empty-state">Report not found.</p>';
+        return;
     }
+
+    const met = r.metrics || {};
+    const perf = r.performance || {};
+    const apk = r.apkInfo || {};
+    const net = met.network || r.advancedInsights?.network || {};
+    const mem = met.memory || {};
+    const tv = r.testValidation || null;
+
+    const avgFPS = met.avgFPS || 0;
+    const fpsColor = avgFPS >= 55 ? '#22c55e' : avgFPS >= 30 ? '#f59e0b' : '#ef4444';
+    const durationStr = r.duration ? `${Math.floor(r.duration / 60)}m ${r.duration % 60}s` : '—';
+    const peakMem = perf.peakMemory || mem.peak || 0;
+    const avgPing = net.avgPing || 0;
+
+    // Overall status — prefer testValidation summary, fall back to old checklist
+    let overallStatus = 'PASS';
+    let overallColor = '#22c55e';
+    if (tv?.automated?.summary) {
+        const s = tv.automated.summary;
+        if (s.fail > 0) { overallStatus = 'FAIL'; overallColor = '#ef4444'; }
+        else if (s.warn > 0) { overallStatus = 'WARNING'; overallColor = '#f59e0b'; }
+    } else {
+        const chk = r.checklist || {};
+        if (chk.crash === 'FAIL' || chk.anr === 'FAIL') { overallStatus = 'FAIL'; overallColor = '#ef4444'; }
+        else if (chk.error === 'WARNING') { overallStatus = 'WARNING'; overallColor = '#f59e0b'; }
+    }
+
+    // Validation rows from testValidation — ordered by category
+    let validationHtml = '';
+    if (tv?.automated?.categories?.length) {
+        const CAT_ORDER = ['APK Compliance', 'Security', 'Runtime Stability', 'Performance', 'SDK Integrations', 'Network Validation'];
+        const orderedCats = CAT_ORDER
+            .map(name => tv.automated.categories.find(c => c.category === name))
+            .filter(Boolean);
+
+        const itemRow = (it) => {
+            const c = it.status === 'FAIL' ? '#ef4444' : it.status === 'WARN' ? '#f59e0b' : '#22c55e';
+            const icon = it.status === 'FAIL' ? '✗' : it.status === 'WARN' ? '⚠' : '✓';
+            const titleColor = it.status === 'FAIL' ? '#fca5a5' : it.status === 'WARN' ? '#fde68a' : '#a1a1aa';
+            // First evidence line that isn't a boilerplate "passed" or "Fix:" line
+            const evid = (it.evidence || []).find(e => e && !e.startsWith('Fix:') && !e.startsWith('Static APK')) || '';
+            return `<div style="display:flex;align-items:flex-start;gap:8px;padding:5px 0;border-bottom:1px solid #1f1f27;">
+                <span style="font-size:10px;font-weight:700;color:${c};min-width:10px;margin-top:1px;">${icon}</span>
+                <div style="min-width:0;">
+                    <div style="font-size:11px;color:${titleColor};line-height:1.35;">${escapeHtml(it.title)}</div>
+                    ${evid ? `<div style="font-size:10px;color:#3f3f46;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(evid)}</div>` : ''}
+                </div>
+            </div>`;
+        };
+
+        for (const group of orderedCats) {
+            const fails = group.items.filter(i => i.status === 'FAIL');
+            const warns = group.items.filter(i => i.status === 'WARN');
+            const passes = group.items.filter(i => i.status === 'PASS');
+            if (!fails.length && !warns.length && !passes.length) continue;
+
+            const critItems = [...fails, ...warns];
+            validationHtml += `<div style="margin-bottom:2px;">
+                <div style="font-size:9px;color:#52525b;text-transform:uppercase;letter-spacing:.07em;padding:7px 0 2px;">${escapeHtml(group.category)}</div>
+                ${critItems.map(itemRow).join('')}
+                ${passes.length ? `<div style="display:flex;align-items:center;gap:5px;padding:5px 0;font-size:10px;color:#3f3f46;border-bottom:1px solid #1f1f27;">
+                    <span style="color:#22c55e;font-size:10px;">✓</span> ${passes.length} check${passes.length > 1 ? 's' : ''} passed
+                </div>` : ''}
+            </div>`;
+        }
+    } else {
+        // Fallback for old reports without testValidation
+        const chk = r.checklist || {};
+        const sc = (v) => v === 'PASS' ? '#22c55e' : v === 'FAIL' ? '#ef4444' : '#f59e0b';
+        const si = (v) => v === 'PASS' ? '✓' : v === 'FAIL' ? '✗' : '⚠';
+        const oldRow = (label, val) => `<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid #1f1f27;">
+            <span style="font-size:11px;color:#a1a1aa;">${label}</span>
+            <span style="font-size:10px;font-weight:700;color:${sc(val)};">${si(val)} ${val || 'N/A'}</span>
+        </div>`;
+        validationHtml = `<div style="margin-bottom:2px;">
+            <div style="font-size:9px;color:#52525b;text-transform:uppercase;letter-spacing:.07em;padding:7px 0 2px;">Core Checks</div>
+            ${oldRow('Install / Launch', chk.installation)}
+            ${oldRow('Crash', chk.crash)}
+            ${oldRow('ANR', chk.anr)}
+            ${oldRow('Lifecycle', chk.lifecycle)}
+            ${oldRow('Errors', chk.error)}
+        </div>`;
+    }
+
+    // ─── Performance detail chips ─────────────────────────────────────────────
+    const perfChips = [];
+    if (perf.avgCPU > 0) {
+        const cpuColor = perf.avgCPU >= 70 ? '#ef4444' : perf.avgCPU >= 40 ? '#f59e0b' : '#4ade80';
+        perfChips.push(`<div style="background:#18181b;border-radius:6px;padding:6px 10px;text-align:center;">
+            <div style="font-size:15px;font-weight:700;color:${cpuColor};line-height:1;">${perf.avgCPU}%</div>
+            <div style="font-size:9px;color:#52525b;margin-top:2px;text-transform:uppercase;">CPU avg</div>
+        </div>`);
+    }
+    if (perf.fpsDrops > 0) {
+        const dropColor = perf.fpsDrops > 10 ? '#ef4444' : '#f59e0b';
+        perfChips.push(`<div style="background:#18181b;border-radius:6px;padding:6px 10px;text-align:center;">
+            <div style="font-size:15px;font-weight:700;color:${dropColor};line-height:1;">${perf.fpsDrops}</div>
+            <div style="font-size:9px;color:#52525b;margin-top:2px;text-transform:uppercase;">FPS drops</div>
+        </div>`);
+    }
+    if (met.memory?.average > 0) {
+        perfChips.push(`<div style="background:#18181b;border-radius:6px;padding:6px 10px;text-align:center;">
+            <div style="font-size:15px;font-weight:700;color:#a1a1aa;line-height:1;">${met.memory.average}</div>
+            <div style="font-size:9px;color:#52525b;margin-top:2px;text-transform:uppercase;">MB avg</div>
+        </div>`);
+    }
+    const perfDetailHtml = perfChips.length ? `
+        <div style="font-size:9px;color:#52525b;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px;">Performance</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;">${perfChips.join('')}</div>` : '';
+
+    // ─── Network detail ───────────────────────────────────────────────────────
+    const netChips = [];
+    if (net.disconnects > 0) {
+        netChips.push(`<div style="background:#18181b;border-radius:6px;padding:6px 10px;text-align:center;">
+            <div style="font-size:15px;font-weight:700;color:#ef4444;line-height:1;">${net.disconnects}</div>
+            <div style="font-size:9px;color:#52525b;margin-top:2px;text-transform:uppercase;">disconnects</div>
+        </div>`);
+    }
+    if (net.dataUsedMB && parseFloat(net.dataUsedMB) > 0) {
+        netChips.push(`<div style="background:#18181b;border-radius:6px;padding:6px 10px;text-align:center;">
+            <div style="font-size:15px;font-weight:700;color:#a1a1aa;line-height:1;">${net.dataUsedMB}</div>
+            <div style="font-size:9px;color:#52525b;margin-top:2px;text-transform:uppercase;">MB used</div>
+        </div>`);
+    }
+    const networkDetailHtml = netChips.length ? `
+        <div style="font-size:9px;color:#52525b;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px;">Network</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;">${netChips.join('')}</div>` : '';
+
+    // ─── Gameplay events ──────────────────────────────────────────────────────
+    const firedEvents = (r.sdkChecklist || []).filter(e => e.count > 0);
+    const gameplayEventsHtml = firedEvents.length ? `
+        <div style="font-size:9px;color:#52525b;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px;">Gameplay Events</div>
+        <div style="background:#18181b;border-radius:7px;padding:2px 10px;margin-bottom:14px;">
+            ${firedEvents.map(e => `<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid #1f1f27;">
+                <span style="font-size:11px;color:#a1a1aa;">${escapeHtml(e.label)}</span>
+                <span style="font-size:11px;font-weight:600;color:#e4e4e7;">${e.count}×</span>
+            </div>`).join('')}
+        </div>` : '';
+
+    // ─── Manual QA progress ───────────────────────────────────────────────────
+    const manualProg = tv?.manual?.progress;
+    const manualQaHtml = (manualProg && manualProg.checked > 0) ? (() => {
+        const pct = manualProg.total > 0 ? Math.round((manualProg.checked / manualProg.total) * 100) : 0;
+        const barColor = manualProg.failed > 0 ? '#ef4444' : manualProg.passed === manualProg.checked ? '#22c55e' : '#f59e0b';
+        return `<div style="font-size:9px;color:#52525b;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px;">Manual QA</div>
+        <div style="background:#18181b;border-radius:7px;padding:8px 10px;margin-bottom:14px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                <span style="font-size:11px;color:#a1a1aa;">${manualProg.checked}/${manualProg.total} items checked</span>
+                <span style="font-size:10px;color:#52525b;">${pct}%</span>
+            </div>
+            <div style="height:3px;background:#27272a;border-radius:2px;margin-bottom:8px;">
+                <div style="height:3px;background:${barColor};border-radius:2px;width:${pct}%;"></div>
+            </div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                ${manualProg.passed  > 0 ? `<span style="font-size:10px;color:#22c55e;">✓ ${manualProg.passed} passed</span>` : ''}
+                ${manualProg.failed  > 0 ? `<span style="font-size:10px;color:#ef4444;">✗ ${manualProg.failed} failed</span>` : ''}
+                ${manualProg.skipped > 0 ? `<span style="font-size:10px;color:#52525b;">— ${manualProg.skipped} skipped</span>` : ''}
+            </div>
+        </div>`;
+    })() : '';
+
+    // ─── Build info ───────────────────────────────────────────────────────────
+    const buildRows = [];
+    if (apk.versionName) buildRows.push(['Version', `${apk.versionName}${apk.versionCode ? ` (build ${apk.versionCode})` : ''}`]);
+    if (apk.sdkInfo?.engine && apk.sdkInfo.engine !== 'Unknown') buildRows.push(['Engine', apk.sdkInfo.engine]);
+    if (apk.targetSdk) buildRows.push(['Target SDK', `API ${apk.targetSdk}`]);
+    if (apk.minSdk) buildRows.push(['Min SDK', `API ${apk.minSdk}`]);
+    const buildInfoHtml = buildRows.length ? `
+        <div style="font-size:9px;color:#52525b;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px;">Build Info</div>
+        <div style="background:#18181b;border-radius:7px;padding:2px 10px;margin-bottom:14px;">
+            ${buildRows.map(([k, v]) => `<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid #1f1f27;">
+                <span style="font-size:10px;color:#52525b;">${escapeHtml(k)}</span>
+                <span style="font-size:11px;color:#d4d4d8;">${escapeHtml(String(v))}</span>
+            </div>`).join('')}
+        </div>` : '';
+
+    // ─── Recommendations ──────────────────────────────────────────────────────
+    const recs = (r.aiInsights?.recommendations || []).slice(0, 3);
+    const recommendationsHtml = recs.length ? `
+        <div style="font-size:9px;color:#52525b;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px;">Recommendations</div>
+        <div style="background:#18181b;border-radius:7px;padding:2px 10px;margin-bottom:14px;">
+            ${recs.map(rec => `<div style="display:flex;align-items:flex-start;gap:7px;padding:5px 0;border-bottom:1px solid #1f1f27;">
+                <span style="font-size:10px;color:#3b82f6;margin-top:1px;flex-shrink:0;">→</span>
+                <span style="font-size:11px;color:#a1a1aa;line-height:1.4;">${escapeHtml(rec)}</span>
+            </div>`).join('')}
+        </div>` : '';
+
+    historyDetail.innerHTML = `
+        <div style="padding:4px 0 20px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:3px;">
+                <div style="font-size:13px;font-weight:700;color:#e4e4e7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(r.apkName || r.packageName || sessionId)}</div>
+                <span style="flex-shrink:0;font-size:10px;font-weight:700;color:${overallColor};background:${overallColor}18;padding:2px 8px;border-radius:10px;">${overallStatus}</span>
+            </div>
+            <div style="font-size:11px;color:#52525b;margin-bottom:16px;">${formatSessionDate(r.timestamp)} · ${durationStr}</div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:14px;">
+                <div style="background:#18181b;border-radius:7px;padding:9px 8px;text-align:center;">
+                    <div style="font-size:20px;font-weight:800;color:${fpsColor};line-height:1;">${avgFPS || '—'}</div>
+                    <div style="font-size:9px;color:#52525b;margin-top:3px;text-transform:uppercase;letter-spacing:.04em;">Avg FPS</div>
+                </div>
+                <div style="background:#18181b;border-radius:7px;padding:9px 8px;text-align:center;">
+                    <div style="font-size:20px;font-weight:800;color:#a1a1aa;line-height:1;">${peakMem || '—'}</div>
+                    <div style="font-size:9px;color:#52525b;margin-top:3px;text-transform:uppercase;letter-spacing:.04em;">Peak MB</div>
+                </div>
+                <div style="background:#18181b;border-radius:7px;padding:9px 8px;text-align:center;">
+                    <div style="font-size:20px;font-weight:800;color:#a1a1aa;line-height:1;">${avgPing || '—'}</div>
+                    <div style="font-size:9px;color:#52525b;margin-top:3px;text-transform:uppercase;letter-spacing:.04em;">Ping ms</div>
+                </div>
+            </div>
+
+            <div style="background:#18181b;border-radius:8px;padding:2px 12px 8px;margin-bottom:14px;">
+                ${validationHtml}
+            </div>
+
+            ${perfDetailHtml}
+            ${networkDetailHtml}
+            ${gameplayEventsHtml}
+            ${manualQaHtml}
+            ${buildInfoHtml}
+            ${recommendationsHtml}
+
+            ${apk.packageName ? `<div style="font-size:10px;color:#3f3f46;word-break:break-all;">${escapeHtml(apk.packageName)}</div>` : ''}
+        </div>
+    `;
 }
 
 // ─── LIVE FPS CHART ───────────────────────────────────────────────────────────
@@ -997,72 +1154,101 @@ const REF_LINE = Array(FPS_WINDOW).fill(null);
 function initLiveChart() {
     if (liveFpsChart) liveFpsChart.destroy();
     _fpsPointColors = [];
+
+    // Gradient fill — built on first draw via plugin so chartArea is defined
+    const gradientPlugin = {
+        id: 'lmGradient',
+        beforeDatasetDraw(chart) {
+            const { ctx, chartArea } = chart;
+            if (!chartArea) return;
+            const ds = chart.data.datasets[0];
+            const gradient = ctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+            gradient.addColorStop(0, 'rgba(59, 130, 246, 0.28)');
+            gradient.addColorStop(0.6, 'rgba(59, 130, 246, 0.08)');
+            gradient.addColorStop(1, 'rgba(59, 130, 246, 0)');
+            ds.backgroundColor = gradient;
+        }
+    };
+
     liveFpsChart = new Chart(liveFpsCtx, {
         type: 'line',
+        plugins: [gradientPlugin],
         data: {
-            labels: Array(FPS_WINDOW).fill(''),
+            labels: Array.from({ length: FPS_WINDOW }, (_, i) => i),
             datasets: [
                 {
                     label: 'FPS',
                     data: Array(FPS_WINDOW).fill(null),
-                    borderColor: '#2dd4bf',
-                    backgroundColor: 'rgba(45,212,191,0.07)',
+                    borderColor: '#3B82F6',
+                    backgroundColor: 'transparent', // filled by plugin above
                     borderWidth: 2,
                     fill: true,
-                    tension: 0,
-                    pointRadius: 2,
-                    pointBackgroundColor: Array(FPS_WINDOW).fill('#2dd4bf'),
-                    pointBorderWidth: 0,
+                    tension: 0.35,
+                    pointRadius: 0,
+                    pointHoverRadius: 4,
+                    pointHoverBackgroundColor: '#3B82F6',
                     spanGaps: false
-                },
-                {
-                    label: '60fps',
-                    data: Array(FPS_WINDOW).fill(60),
-                    borderColor: 'rgba(45,212,191,0.2)',
-                    borderWidth: 1,
-                    borderDash: [4, 4],
-                    pointRadius: 0,
-                    fill: false,
-                    tension: 0
-                },
-                {
-                    label: '30fps',
-                    data: Array(FPS_WINDOW).fill(30),
-                    borderColor: 'rgba(248,113,113,0.3)',
-                    borderWidth: 1,
-                    borderDash: [4, 4],
-                    pointRadius: 0,
-                    fill: false,
-                    tension: 0
                 }
             ]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            animation: { 
-                duration: 400,
-                easing: 'linear'
-            },
+            animation: { duration: 300, easing: 'linear' },
+            interaction: { mode: 'index', intersect: false },
             scales: {
-                x: { display: false },
+                x: {
+                    display: true,
+                    grid: { display: false },
+                    border: { display: false },
+                    ticks: {
+                        color: 'rgba(100,116,139,0.7)',
+                        font: { size: 10, family: "'JetBrains Mono', monospace" },
+                        maxRotation: 0,
+                        autoSkip: false,
+                        callback: (_, i) => i % 5 === 0 ? i : ''
+                    }
+                },
                 y: {
                     display: true,
+                    position: 'left',
                     min: 0,
-                    max: 120,
-                    grid: { color: 'rgba(255,255,255,0.04)' },
+                    suggestedMax: 65,
+                    grid: {
+                        color: 'rgba(255,255,255,0.05)',
+                        drawBorder: false
+                    },
+                    border: { display: false, dash: [2, 4] },
                     ticks: {
-                        color: '#71717a',
-                        font: { size: 10 },
-                        stepSize: 30,
-                        callback: v => v === 0 ? '' : `${v}`
+                        color: 'rgba(100,116,139,0.8)',
+                        font: { size: 10, family: "'JetBrains Mono', monospace" },
+                        stepSize: 5,
+                        padding: 8,
+                        callback: v => v % 5 === 0 && v > 0 ? v : ''
                     }
                 }
             },
-            plugins: { legend: { display: false } }
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    backgroundColor: 'rgba(15,23,42,0.9)',
+                    borderColor: 'rgba(59,130,246,0.3)',
+                    borderWidth: 1,
+                    titleColor: '#94A3B8',
+                    bodyColor: '#F1F5F9',
+                    titleFont: { size: 10 },
+                    bodyFont: { size: 12, weight: '700', family: "'JetBrains Mono', monospace" },
+                    padding: 8,
+                    displayColors: false,
+                    callbacks: {
+                        title: items => `t = ${items[0].label}s`,
+                        label: item => `${item.raw} FPS`
+                    }
+                }
+            }
         }
     });
-    _fpsPointColors = Array(FPS_WINDOW).fill('#2dd4bf');
+    _fpsPointColors = Array(FPS_WINDOW).fill('#3B82F6');
 }
 
 if (window.api.onLiveData) {
@@ -1081,27 +1267,11 @@ if (window.api.onLiveData) {
             if (liveFps) liveFps.textContent = isNaN(fpsNum) ? '--' : fpsNum;
 
             if (!isNaN(fpsNum)) {
-                // Color thresholds: smooth ≥55, playable ≥30, choppy <30
-                const fpsColor  = fpsNum >= 55 ? '#2dd4bf' : fpsNum >= 30 ? '#fbbf24' : '#f87171';
-                const fpsLabel  = fpsNum >= 55 ? 'SMOOTH'  : fpsNum >= 30 ? 'PLAYABLE' : 'CHOPPY';
-                const fpsBarPct = Math.min(100, Math.round((fpsNum / 120) * 100));
+                // Color the big FPS number: smooth ≥55, playable ≥30, choppy <30
+                const fpsColor = fpsNum >= 55 ? '#22C55E' : fpsNum >= 30 ? '#F59E0B' : '#EF4444';
+                if (liveFps) liveFps.style.color = fpsColor;
 
-                if (liveFps) { liveFps.style.color = fpsColor; liveFps.style.textShadow = `0 0 12px ${fpsColor}55`; }
-
-                const dot = document.getElementById('fps-indicator-dot');
-                if (dot) { dot.style.background = fpsColor; dot.style.boxShadow = `0 0 6px ${fpsColor}`; }
-
-                const bar = document.getElementById('fps-bar');
-                if (bar) { bar.style.width = `${fpsBarPct}%`; bar.style.background = fpsColor; }
-
-                const ql = document.getElementById('fps-quality-label');
-                if (ql) {
-                    ql.textContent = fpsLabel;
-                    ql.style.color = fpsColor;
-                    ql.style.background = `${fpsColor}18`;
-                }
-
-                // Track min/avg/max across session
+                // Track min/avg/max for report (hidden elements still updated)
                 if (!window._fpsTracker) window._fpsTracker = { min: fpsNum, max: fpsNum, sum: fpsNum, count: 1 };
                 else {
                     const t = window._fpsTracker;
@@ -1114,13 +1284,20 @@ if (window.api.onLiveData) {
                     const avgEl = document.getElementById('fps-avg');
                     const peakEl = document.getElementById('fps-peak');
                     if (minEl) minEl.textContent = t.min;
-                    if (avgEl) { avgEl.textContent = avg; avgEl.style.color = avg >= 55 ? '#2dd4bf' : avg >= 30 ? '#fbbf24' : '#f87171'; }
+                    if (avgEl) avgEl.textContent = avg;
                     if (peakEl) peakEl.textContent = t.max;
                 }
             }
 
-            liveNetwork.textContent = data.network;
-            liveDevice.textContent = data.device;
+            // Network stat — show actual status from telemetry
+            const netType = data.network === 'ONLINE' ? 'Online'
+                          : data.network === 'OFFLINE' ? 'Offline'
+                          : (data.network || '--');
+            if (liveNetwork) {
+                liveNetwork.textContent = netType;
+                liveNetwork.style.color = data.network === 'OFFLINE' ? '#EF4444' : '';
+            }
+            if (liveDevice) liveDevice.textContent = data.device;
 
             if (data.battery && data.battery !== 'Unknown') {
                 if (statusBattery) statusBattery.textContent = `${data.battery}%`;
@@ -1148,28 +1325,41 @@ if (window.api.onLiveData) {
                         renderEventsTab(currentSession.runtime);
                     }
                 }
+
+                // Tick signal-based milestones
+                tickMilestones(secondsElapsed, {
+                    hasSdkData: !!(data.advanced.runtime?.sdkIntelligence),
+                    hasNetwork: data.network && data.network !== '--' && data.network !== 'Offline'
+                });
             }
 
-            // FPS chart — 60-second sliding window, per-point jank coloring
+            // FPS chart — slide data, keep static 0-59 labels
             if (liveFpsChart && !isNaN(fpsNum)) {
-                const ptColor = fpsNum >= 55 ? '#2dd4bf' : fpsNum >= 30 ? '#fbbf24' : '#f87171';
                 const ds = liveFpsChart.data.datasets[0];
                 ds.data.push(fpsNum);
-                ds.pointBackgroundColor.push(ptColor);
-                liveFpsChart.data.labels.push('');
-                if (ds.data.length > FPS_WINDOW) {
-                    ds.data.shift();
-                    ds.pointBackgroundColor.shift();
-                    liveFpsChart.data.labels.shift();
+                if (ds.data.length > FPS_WINDOW) ds.data.shift();
+                // Dynamic Y-max: give 10% headroom above peak
+                const peak = Math.max(...ds.data.filter(v => v !== null));
+                if (!isNaN(peak) && peak > 0) {
+                    liveFpsChart.options.scales.y.suggestedMax = Math.ceil(peak * 1.12 / 5) * 5;
                 }
-                liveFpsChart.update();
+                liveFpsChart.update('none'); // skip animation for smooth streaming
             }
 
-            // Memory stat - removed from dashboard
-            
-            // CPU / Jank / FrameTime from advanced telemetry - removed from dashboard
+            // Stats bar — Memory
+            const memEl = document.getElementById('live-memory');
+            if (memEl && data.memory) memEl.textContent = data.memory;
+
+            // Stats bar — Frame Time, CPU from advanced
             if (data.advanced) {
-                // We keep the advanced insights data gathering but stop updating the removed UI elements
+                const ftEl = document.getElementById('live-frame-time');
+                const cpuEl = document.getElementById('live-cpu');
+                if (ftEl && data.advanced.frameTime != null) {
+                    ftEl.textContent = Number(data.advanced.frameTime).toFixed(1);
+                }
+                if (cpuEl && data.advanced.cpuUsage != null) {
+                    cpuEl.textContent = `${Math.round(data.advanced.cpuUsage)}%`;
+                }
             }
 
             if (data.issues && data.issues.length > 0) {
@@ -2535,8 +2725,8 @@ function renderRegManifest(md, sec) {
     const exportsHtml = (md.addedExports?.length || md.removedExports?.length) ? `
         <div style="margin-top: 10px;">
             <div style="font-size: 10px; color: #a1a1aa; text-transform: uppercase; margin-bottom: 4px;">Exported Components</div>
-            ${md.addedExports.map(e => `<div style="font-size: 10px; color: #86efac; font-family: 'JetBrains Mono', monospace;">+ ${escapeHtml(e)}</div>`).join('')}
-            ${md.removedExports.map(e => `<div style="font-size: 10px; color: #fca5a5; font-family: 'JetBrains Mono', monospace;">− ${escapeHtml(e)}</div>`).join('')}
+            ${(md.addedExports || []).map(e => `<div style="font-size: 10px; color: #86efac; font-family: 'JetBrains Mono', monospace;">+ ${escapeHtml(e)}</div>`).join('')}
+            ${(md.removedExports || []).map(e => `<div style="font-size: 10px; color: #fca5a5; font-family: 'JetBrains Mono', monospace;">− ${escapeHtml(e)}</div>`).join('')}
         </div>
     ` : '';
     const secColor = sec.direction === 'WORSENED' ? 'var(--danger)' : sec.direction === 'IMPROVED' ? 'var(--success)' : '#71717a';
@@ -2584,4 +2774,684 @@ function renderRegPerformance(pd) {
             ${pd.issues?.length ? `<div style="margin-top: 10px; padding: 8px; background: rgba(245,158,11,0.06); border-radius: 6px;">${pd.issues.map(i => `<div style="font-size: 11px; color: #fde68a; padding: 2px 0;">⚠ ${escapeHtml(i)}</div>`).join('')}</div>` : ''}
         </div>
     `;
+}
+
+// ─── QA CHECKLIST ─────────────────────────────────────────────────────────────
+
+const QA_SECTIONS = [
+    {
+        id: 'core_gameplay', icon: '🎮', title: 'Core Gameplay Testing',
+        items: [
+            { id: 'cg_1', text: 'Game loop is functional from start → mid → end' },
+            { id: 'cg_2', text: 'No blockers — player always has something to do' },
+            { id: 'cg_3', text: 'FTUE (First Time User Experience) is clear and guided' },
+            { id: 'cg_4', text: 'Difficulty progression is smooth — no sudden spikes' },
+            { id: 'cg_5', text: 'All mechanics work as intended (tap, drag, merge, etc.)' },
+            { id: 'cg_6', text: 'Win/Loss conditions trigger correctly' },
+            { id: 'cg_7', text: 'Idle systems generate earnings correctly over time' }
+        ]
+    },
+    {
+        id: 'progression', icon: '🧠', title: 'Progression & Economy Balance',
+        items: [
+            { id: 'pe_1', text: 'Currency earning vs spending is balanced' },
+            { id: 'pe_2', text: 'No infinite currency exploit possible' },
+            { id: 'pe_3', text: 'Upgrades feel meaningful — visible impact on gameplay' },
+            { id: 'pe_4', text: 'Progress speed is neither too fast nor too slow' },
+            { id: 'pe_5', text: 'Late game does not feel stuck or boring' },
+            { id: 'pe_6', text: 'Rewards scale properly — early vs late game comparison' },
+            { id: 'pe_7', text: 'Prestige/reset systems work correctly (if applicable)' }
+        ]
+    },
+    {
+        id: 'monetization', icon: '💰', title: 'Monetization QA',
+        items: [
+            { id: 'mo_1', text: 'All IAPs trigger correctly and show correct price by region' },
+            { id: 'mo_2', text: 'Purchase success flow handled — item credited immediately' },
+            { id: 'mo_3', text: 'Purchase failure flow handled — no charge without item' },
+            { id: 'mo_4', text: 'Restore Purchases works on re-install' },
+            { id: 'mo_5', text: 'Rewarded Ads — reward given only after full watch' },
+            { id: 'mo_6', text: 'Rewarded Ads — no reward if ad skipped or closed early' },
+            { id: 'mo_7', text: 'Interstitial Ads — not too frequent, no spam' },
+            { id: 'mo_8', text: 'Interstitial Ads — do not interrupt critical gameplay' },
+            { id: 'mo_9', text: 'Remove Ads IAP works properly — no ads shown after purchase' }
+        ]
+    },
+    {
+        id: 'ads', icon: '📺', title: 'Ads Integration',
+        items: [
+            { id: 'ad_1', text: 'Ad loads successfully with acceptable fill rate' },
+            { id: 'ad_2', text: 'Fallback / no-fill handled gracefully — no crash or blank' },
+            { id: 'ad_3', text: 'No crashes or ANRs caused by ad SDK' },
+            { id: 'ad_4', text: 'Ad frequency follows design rules — no over-serving' },
+            { id: 'ad_5', text: 'Ad placement correct — not overlapping UI elements' },
+            { id: 'ad_6', text: 'Network switch (WiFi → Mobile data) handled during ad play' }
+        ]
+    },
+    {
+        id: 'offline', icon: '📴', title: 'Offline & Idle Systems',
+        items: [
+            { id: 'of_1', text: 'Offline earnings calculated correctly on resume' },
+            { id: 'of_2', text: 'Time cap enforced (e.g., 2hr / 8hr / 15hr cap)' },
+            { id: 'of_3', text: 'Device time-change exploit blocked — no cheat via clock' },
+            { id: 'of_4', text: 'Resume game shows correct offline reward popup' },
+            { id: 'of_5', text: 'Offline UI displays correct time away and earnings value' },
+            { id: 'of_6', text: 'AI bot / automation works correctly during offline period' }
+        ]
+    },
+    {
+        id: 'localization', icon: '🌐', title: 'Localization QA',
+        items: [
+            { id: 'lo_1', text: 'All visible text is translated — no raw key strings visible' },
+            { id: 'lo_2', text: 'No missing strings — "KEY_123" or "MISSING" not visible' },
+            { id: 'lo_3', text: 'Text fits all UI containers — no overflow or clipping' },
+            { id: 'lo_4', text: 'Special characters render properly (€ ₹ ¥ % & etc.)' },
+            { id: 'lo_5', text: 'RTL layout works for Arabic/Hebrew (if supported)' },
+            { id: 'lo_6', text: 'Fonts are readable across all supported languages' }
+        ]
+    },
+    {
+        id: 'device', icon: '📱', title: 'Device Compatibility',
+        items: [
+            { id: 'dc_1', text: 'Game runs stable on low-end devices (2–3GB RAM)' },
+            { id: 'dc_2', text: 'No overheating or excessive battery drain during session' },
+            { id: 'dc_3', text: 'Supports different screen sizes — phones and tablets' },
+            { id: 'dc_4', text: 'Safe area respected on notch and punch-hole displays' },
+            { id: 'dc_5', text: 'Portrait and/or landscape orientation works properly' }
+        ]
+    },
+    {
+        id: 'performance', icon: '⚡', title: 'Performance Testing',
+        items: [
+            { id: 'pf_1', text: 'FPS stable — no persistent frame drops during normal play' },
+            { id: 'pf_2', text: 'No lag during heavy scenes — explosions, animations, spawns' },
+            { id: 'pf_3', text: 'Loading/startup time acceptable (under 8 seconds)' },
+            { id: 'pf_4', text: 'Memory usage stable — no progressive leak over session' },
+            { id: 'pf_5', text: 'No ANR (Application Not Responding) errors' }
+        ]
+    },
+    {
+        id: 'crash', icon: '💥', title: 'Crash & Stability',
+        items: [
+            { id: 'cs_1', text: 'No crash on startup — cold and warm launch tested' },
+            { id: 'cs_2', text: 'No crash during active gameplay session' },
+            { id: 'cs_3', text: 'No crash when ad plays or ad SDK initializes' },
+            { id: 'cs_4', text: 'No crash during or after IAP purchase flow' },
+            { id: 'cs_5', text: 'App recovers properly after a crash — no corrupted state' },
+            { id: 'cs_6', text: 'Crash logs captured and sent to analytics/Crashlytics' }
+        ]
+    },
+    {
+        id: 'save_load', icon: '🔄', title: 'Save / Load System',
+        items: [
+            { id: 'sl_1', text: 'Progress saves correctly — verified after forced close' },
+            { id: 'sl_2', text: 'Game resumes from exact correct state on relaunch' },
+            { id: 'sl_3', text: 'Cloud save syncs properly (if implemented)' },
+            { id: 'sl_4', text: 'No data loss on reinstall or app update' }
+        ]
+    },
+    {
+        id: 'notifications', icon: '🔔', title: 'Notifications',
+        items: [
+            { id: 'no_1', text: 'Push notifications trigger correctly at scheduled times' },
+            { id: 'no_2', text: 'Deep links from notifications open the correct screen' },
+            { id: 'no_3', text: 'No notification spam — frequency capped appropriately' },
+            { id: 'no_4', text: 'Time-based notification content is accurate' }
+        ]
+    },
+    {
+        id: 'ui_ux', icon: '🎨', title: 'UI / UX QA',
+        items: [
+            { id: 'ux_1', text: 'All buttons are tappable with correct hitbox size' },
+            { id: 'ux_2', text: 'No overlapping or z-fighting UI elements' },
+            { id: 'ux_3', text: 'Animations are smooth and polished — no jank' },
+            { id: 'ux_4', text: 'Visual feedback present on all interactions (tap, reward, upgrade)' },
+            { id: 'ux_5', text: 'Design is consistent across all screens — fonts, colors, spacing' }
+        ]
+    },
+    {
+        id: 'edge_cases', icon: '🧪', title: 'Edge Case Testing',
+        items: [
+            { id: 'ec_1', text: 'Rapid tapping / spam input does not break game state' },
+            { id: 'ec_2', text: 'Switching apps mid-session — state preserved on return' },
+            { id: 'ec_3', text: 'Internet ON → OFF mid-session handled gracefully' },
+            { id: 'ec_4', text: 'Internet OFF → ON reconnects properly without restart' },
+            { id: 'ec_5', text: 'Low battery mode does not cause crashes or save loss' },
+            { id: 'ec_6', text: 'Incoming call during gameplay — resumes correctly after' },
+            { id: 'ec_7', text: 'Device clock change (cheat test) — handled correctly' },
+            { id: 'ec_8', text: 'Background → foreground transition — no black screen / freeze' }
+        ]
+    },
+    {
+        id: 'analytics', icon: '📊', title: 'Analytics & Tracking',
+        items: [
+            { id: 'an_1', text: 'All key events firing correctly — verified in dashboard' },
+            { id: 'an_2', text: 'No duplicate event fire on single action' },
+            { id: 'an_3', text: 'Full funnel tracked: FTUE → D1 → D3 → D7 retention events' },
+            { id: 'an_4', text: 'Ad events tracked properly (impression, click, reward)' },
+            { id: 'an_5', text: 'Purchase events tracked with correct SKU and value' }
+        ]
+    },
+    {
+        id: 'store', icon: '🏪', title: 'Store Readiness',
+        items: [
+            { id: 'st_1', text: 'App icon and screenshots match actual gameplay' },
+            { id: 'st_2', text: 'No misleading content in store listing' },
+            { id: 'st_3', text: 'Store description matches actual game mechanics' },
+            { id: 'st_4', text: 'Privacy policy URL added and accessible' },
+            { id: 'st_5', text: 'All permissions are justified in store listing' },
+            { id: 'st_6', text: 'No Google Play / App Store policy violations' }
+        ]
+    },
+    {
+        id: 'security', icon: '🔐', title: 'Security & Anti-Cheat',
+        items: [
+            { id: 'se_1', text: 'No easy currency/resource hack via memory editor' },
+            { id: 'se_2', text: 'Server-side validation for purchases (if applicable)' },
+            { id: 'se_3', text: 'Time manipulation prevention working correctly' },
+            { id: 'se_4', text: 'APK tamper protection active (if implemented)' }
+        ]
+    },
+    {
+        id: 'live_ops', icon: '🧩', title: 'Live Ops & Events',
+        items: [
+            { id: 'lv_1', text: 'Events trigger on correct scheduled dates and times' },
+            { id: 'lv_2', text: 'Event rewards distributed correctly on completion' },
+            { id: 'lv_3', text: 'Countdown timers show accurate real-time values' },
+            { id: 'lv_4', text: 'Event UI loads and works without crashes or bugs' }
+        ]
+    },
+    {
+        id: 'idle_economy', icon: '🏆', title: 'Idle Economy Deep Checks',
+        items: [
+            { id: 'ie_1', text: 'Income per second vs upgrade cost curve is correct' },
+            { id: 'ie_2', text: 'Time to next milestone feels rewarding — not too long' },
+            { id: 'ie_3', text: 'Offline vs online earning ratio is balanced' },
+            { id: 'ie_4', text: 'No dead zones — player never waiting too long with nothing' }
+        ]
+    },
+    {
+        id: 'puzzle', icon: '🔲', title: 'Puzzle / Level QA (if applicable)',
+        items: [
+            { id: 'pz_1', text: 'Every level is solvable — no impossible states' },
+            { id: 'pz_2', text: 'No soft-lock states — player cannot get permanently stuck' },
+            { id: 'pz_3', text: 'Grid/tile movement works correctly in all directions' },
+            { id: 'pz_4', text: 'Difficulty ramp tested across 100+ levels' }
+        ]
+    },
+    {
+        id: 'release', icon: '🚀', title: 'Release Sign-Off Checks',
+        items: [
+            { id: 're_1', text: 'Day 1 experience manually played through completely' },
+            { id: 're_2', text: 'Day 3 experience simulated — retention hooks present' },
+            { id: 're_3', text: 'Day 7 experience simulated — meta progression tested' },
+            { id: 're_4', text: 'Whale player journey simulated — all IAPs purchaseable' },
+            { id: 're_5', text: 'F2P player journey simulated — ads and free progression work' },
+            { id: 're_6', text: 'Economy spreadsheet validated against in-game numbers' }
+        ]
+    }
+];
+
+// ─── QA CHECKLIST STATE ───────────────────────────────────────────────────────
+
+let _qacItems = {};             // { [itemId]: 'pass' | 'fail' }  (absent = pending)
+let _qacSearch = '';
+let _qacSectionFilter = 'all';
+let _qacStatusFilter = 'all';
+let _qacBound = false;
+let _qacLastProject = null;
+
+// ─── QA CHECKLIST HELPERS ─────────────────────────────────────────────────────
+
+function _qacKey() {
+    return `testmate_qac_${activeProject || '_global'}`;
+}
+
+function _qacLoad() {
+    try {
+        const raw = localStorage.getItem(_qacKey());
+        _qacItems = raw ? JSON.parse(raw) : {};
+    } catch (e) {
+        _qacItems = {};
+    }
+}
+
+function _qacSave() {
+    try {
+        localStorage.setItem(_qacKey(), JSON.stringify(_qacItems));
+    } catch (e) { /* storage full — ignore */ }
+}
+
+function _qacStatus(id) {
+    return _qacItems[id] || 'pending';
+}
+
+function _qacSet(id, status) {
+    if (status === 'pending') {
+        delete _qacItems[id];
+    } else {
+        _qacItems[id] = status;
+    }
+    _qacSave();
+}
+
+function _qacStats() {
+    let total = 0, passed = 0, failed = 0;
+    for (const sec of QA_SECTIONS) {
+        for (const item of sec.items) {
+            total++;
+            const s = _qacStatus(item.id);
+            if (s === 'pass') passed++;
+            else if (s === 'fail') failed++;
+        }
+    }
+    const pending = total - passed - failed;
+    const pct = total > 0 ? Math.round((passed / total) * 100) : 0;
+    return { total, passed, failed, pending, pct };
+}
+
+function _qacVisible() {
+    const results = [];
+    const searchLower = _qacSearch.toLowerCase();
+    for (const sec of QA_SECTIONS) {
+        if (_qacSectionFilter !== 'all' && sec.id !== _qacSectionFilter) continue;
+        for (const item of sec.items) {
+            const statusMatch = _qacStatusFilter === 'all' || _qacStatus(item.id) === _qacStatusFilter;
+            const searchMatch = !searchLower || item.text.toLowerCase().includes(searchLower);
+            if (statusMatch && searchMatch) {
+                results.push({ item, section: sec });
+            }
+        }
+    }
+    return results;
+}
+
+// ─── QA CHECKLIST RENDER ──────────────────────────────────────────────────────
+
+function renderQAChecklist() {
+    const root = document.getElementById('tab-qa-checklist');
+    if (!root) return;
+
+    _qacLoad();
+    const projectChanged = _qacLastProject !== (activeProject || '_global');
+
+    if (!root.querySelector('.qac-title') || projectChanged) {
+        if (projectChanged) {
+            _qacLastProject = activeProject || '_global';
+            _qacBound = false;
+        }
+        _qacFullRender(root);
+    } else {
+        _qacUpdateStats();
+        _qacUpdateSections();
+    }
+
+    if (!_qacBound) {
+        _qacBindEvents(root);
+    }
+}
+
+function _qacFullRender(root) {
+    const sectionOptions = QA_SECTIONS.map(s =>
+        `<option value="${s.id}">${escapeHtml(s.icon + ' ' + s.title)}</option>`
+    ).join('');
+
+    root.innerHTML = `
+        <div style="padding: 20px; max-width: 1100px; margin: 0 auto;">
+            <h2 class="qac-title" style="font-size: 20px; font-weight: 700; color: #f4f4f5; margin: 0 0 18px 0; display: flex; align-items: center; gap: 10px;">
+                ✅ QA Checklist — Production Ready
+            </h2>
+
+            <!-- Toolbar -->
+            <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 18px; align-items: center;">
+                <input
+                    id="qac-search"
+                    type="text"
+                    placeholder="Search checks…"
+                    value="${escapeHtml(_qacSearch)}"
+                    style="flex: 1; min-width: 180px; padding: 8px 12px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: #f4f4f5; font-size: 13px; outline: none;"
+                />
+                <select id="qac-section-filter"
+                    style="padding: 8px 10px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: #f4f4f5; font-size: 12px; cursor: pointer; outline: none;">
+                    <option value="all">All Sections</option>
+                    ${sectionOptions}
+                </select>
+                <select id="qac-status-filter"
+                    style="padding: 8px 10px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: #f4f4f5; font-size: 12px; cursor: pointer; outline: none;">
+                    <option value="all">All Statuses</option>
+                    <option value="pending">Pending</option>
+                    <option value="pass">Pass</option>
+                    <option value="fail">Fail</option>
+                </select>
+                <button id="qac-pass-all-visible"
+                    style="padding: 8px 14px; background: rgba(34,197,94,0.15); border: 1px solid rgba(34,197,94,0.3); border-radius: 8px; color: #4ade80; font-size: 12px; cursor: pointer; white-space: nowrap;">
+                    ✓ Pass Visible
+                </button>
+                <button id="qac-fail-all-visible"
+                    style="padding: 8px 14px; background: rgba(239,68,68,0.12); border: 1px solid rgba(239,68,68,0.3); border-radius: 8px; color: #f87171; font-size: 12px; cursor: pointer; white-space: nowrap;">
+                    ✗ Fail Visible
+                </button>
+                <button id="qac-reset"
+                    style="padding: 8px 14px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; color: #a1a1aa; font-size: 12px; cursor: pointer; white-space: nowrap;">
+                    ↺ Reset
+                </button>
+                <button id="qac-export"
+                    style="padding: 8px 14px; background: rgba(139,92,246,0.15); border: 1px solid rgba(139,92,246,0.3); border-radius: 8px; color: #a78bfa; font-size: 12px; cursor: pointer; white-space: nowrap;">
+                    ⬇ Export
+                </button>
+            </div>
+
+            <!-- Stats Row -->
+            <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 16px;">
+                <div class="qac-stat-card" style="background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.25); border-radius: 10px; padding: 12px 14px; text-align: center;">
+                    <div data-stat="total" style="font-size: 26px; font-weight: 700; color: #60a5fa; line-height: 1;">0</div>
+                    <div style="font-size: 11px; color: #93c5fd; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.05em;">Total Tests</div>
+                </div>
+                <div class="qac-stat-card" style="background: rgba(34,197,94,0.08); border: 1px solid rgba(34,197,94,0.22); border-radius: 10px; padding: 12px 14px; text-align: center;">
+                    <div data-stat="passed" style="font-size: 26px; font-weight: 700; color: #4ade80; line-height: 1;">0</div>
+                    <div style="font-size: 11px; color: #86efac; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.05em;">Passed</div>
+                </div>
+                <div class="qac-stat-card" style="background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.22); border-radius: 10px; padding: 12px 14px; text-align: center;">
+                    <div data-stat="failed" style="font-size: 26px; font-weight: 700; color: #f87171; line-height: 1;">0</div>
+                    <div style="font-size: 11px; color: #fca5a5; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.05em;">Failed</div>
+                </div>
+                <div class="qac-stat-card" style="background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.22); border-radius: 10px; padding: 12px 14px; text-align: center;">
+                    <div data-stat="pending" style="font-size: 26px; font-weight: 700; color: #fbbf24; line-height: 1;">0</div>
+                    <div style="font-size: 11px; color: #fde68a; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.05em;">Pending</div>
+                </div>
+                <div class="qac-stat-card" style="background: rgba(139,92,246,0.08); border: 1px solid rgba(139,92,246,0.22); border-radius: 10px; padding: 12px 14px; text-align: center;">
+                    <div data-stat="pct" style="font-size: 26px; font-weight: 700; color: #a78bfa; line-height: 1;">0%</div>
+                    <div id="qac-stat-progress-sub" style="font-size: 11px; color: #c4b5fd; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.05em;">0 of 111</div>
+                </div>
+            </div>
+
+            <!-- Overall Progress Bar -->
+            <div class="qac-overall-progress" style="background: rgba(255,255,255,0.06); border-radius: 8px; height: 10px; margin-bottom: 22px; overflow: hidden; position: relative;">
+                <div id="qac-overall-fill" class="qac-overall-bar qac-overall-fill"
+                    style="height: 100%; width: 0%; background: linear-gradient(90deg, #4ade80, #22d3ee); border-radius: 8px; transition: width 0.35s ease;">
+                </div>
+            </div>
+            <div id="qac-overall-pct" style="font-size: 12px; color: #a1a1aa; text-align: right; margin-top: -18px; margin-bottom: 20px;">0% complete</div>
+
+            <!-- Sections -->
+            <div id="qac-sections"></div>
+        </div>
+    `;
+
+    // Restore filter UI state
+    const secSel = root.querySelector('#qac-section-filter');
+    if (secSel) secSel.value = _qacSectionFilter;
+    const stsSel = root.querySelector('#qac-status-filter');
+    if (stsSel) stsSel.value = _qacStatusFilter;
+
+    _qacUpdateStats();
+    _qacUpdateSections();
+}
+
+function _qacUpdateStats() {
+    const s = _qacStats();
+    const qTotal = document.querySelector('[data-stat="total"]');
+    const qPassed = document.querySelector('[data-stat="passed"]');
+    const qFailed = document.querySelector('[data-stat="failed"]');
+    const qPending = document.querySelector('[data-stat="pending"]');
+    const qPct = document.querySelector('[data-stat="pct"]');
+    const qSub = document.getElementById('qac-stat-progress-sub');
+    const qFill = document.getElementById('qac-overall-fill');
+    const qOverallPct = document.getElementById('qac-overall-pct');
+
+    if (qTotal) qTotal.textContent = s.total;
+    if (qPassed) qPassed.textContent = s.passed;
+    if (qFailed) qFailed.textContent = s.failed;
+    if (qPending) qPending.textContent = s.pending;
+    if (qPct) qPct.textContent = s.pct + '%';
+    if (qSub) qSub.textContent = `${s.passed} of ${s.total}`;
+    if (qFill) qFill.style.width = s.pct + '%';
+    if (qOverallPct) qOverallPct.textContent = s.pct + '% complete';
+}
+
+function _qacUpdateSections() {
+    const container = document.getElementById('qac-sections');
+    if (!container) return;
+
+    const searchLower = _qacSearch.toLowerCase();
+    let html = '';
+
+    for (const sec of QA_SECTIONS) {
+        if (_qacSectionFilter !== 'all' && sec.id !== sec.id) continue; // guard
+        if (_qacSectionFilter !== 'all' && _qacSectionFilter !== sec.id) continue;
+
+        // Determine which items are visible under current filters
+        const visibleItems = sec.items.filter(item => {
+            const statusMatch = _qacStatusFilter === 'all' || _qacStatus(item.id) === _qacStatusFilter;
+            const searchMatch = !searchLower || item.text.toLowerCase().includes(searchLower);
+            return statusMatch && searchMatch;
+        });
+
+        // When any filter is active, skip sections with no visible items
+        const filtersActive = _qacSectionFilter !== 'all' || _qacStatusFilter !== 'all' || searchLower;
+        if (filtersActive && visibleItems.length === 0) continue;
+
+        // Section stats (always over full section items, not filtered)
+        const secTotal = sec.items.length;
+        let secPassed = 0;
+        for (const item of sec.items) {
+            if (_qacStatus(item.id) === 'pass') secPassed++;
+        }
+        const secFailed = sec.items.filter(i => _qacStatus(i.id) === 'fail').length;
+
+        // Badge colour
+        let badgeStyle;
+        if (secPassed === secTotal) {
+            badgeStyle = 'background: rgba(34,197,94,0.15); color: #4ade80; border: 1px solid rgba(34,197,94,0.3);';
+        } else if (secPassed > 0 || secFailed > 0) {
+            badgeStyle = 'background: rgba(245,158,11,0.15); color: #fbbf24; border: 1px solid rgba(245,158,11,0.3);';
+        } else {
+            badgeStyle = 'background: rgba(59,130,246,0.12); color: #60a5fa; border: 1px solid rgba(59,130,246,0.28);';
+        }
+
+        const secPct = secTotal > 0 ? Math.round((secPassed / secTotal) * 100) : 0;
+        const progressColor = secPassed === secTotal ? '#4ade80' : secPassed > 0 ? '#fbbf24' : '#3b82f6';
+
+        // Item rows (only show items matching filters)
+        const renderItems = filtersActive ? visibleItems : sec.items;
+        const itemRows = renderItems.map(item => {
+            const status = _qacStatus(item.id);
+            const isPass = status === 'pass';
+            const isFail = status === 'fail';
+            const rowBg = isPass
+                ? 'background: rgba(34,197,94,0.05);'
+                : isFail
+                ? 'background: rgba(239,68,68,0.05);'
+                : '';
+            const rowClass = isPass ? 'qac-item--pass' : isFail ? 'qac-item--fail' : '';
+
+            const passActive = isPass
+                ? 'background: rgba(34,197,94,0.25); border-color: rgba(34,197,94,0.5); color: #4ade80;'
+                : 'background: rgba(255,255,255,0.04); border-color: rgba(255,255,255,0.1); color: #71717a;';
+            const failActive = isFail
+                ? 'background: rgba(239,68,68,0.22); border-color: rgba(239,68,68,0.45); color: #f87171;'
+                : 'background: rgba(255,255,255,0.04); border-color: rgba(255,255,255,0.1); color: #71717a;';
+            const passExtraClass = isPass ? ' qac-check-btn--active-pass' : '';
+            const failExtraClass = isFail ? ' qac-check-btn--active-fail' : '';
+
+            let statusLabel, statusLabelStyle;
+            if (isPass) {
+                statusLabel = 'PASS';
+                statusLabelStyle = 'color: #4ade80; background: rgba(34,197,94,0.12); border: 1px solid rgba(34,197,94,0.25);';
+            } else if (isFail) {
+                statusLabel = 'FAIL';
+                statusLabelStyle = 'color: #f87171; background: rgba(239,68,68,0.12); border: 1px solid rgba(239,68,68,0.25);';
+            } else {
+                statusLabel = 'PENDING';
+                statusLabelStyle = 'color: #a1a1aa; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);';
+            }
+
+            return `
+                <div class="qac-item ${rowClass}" style="display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 7px; margin-bottom: 4px; ${rowBg}">
+                    <button class="qac-check-btn${passExtraClass}"
+                        data-action="pass" data-id="${item.id}"
+                        title="Mark Pass"
+                        style="width: 28px; height: 28px; border-radius: 6px; border: 1px solid; cursor: pointer; font-size: 13px; flex-shrink: 0; transition: all 0.15s; ${passActive}">✓</button>
+                    <button class="qac-check-btn${failExtraClass}"
+                        data-action="fail" data-id="${item.id}"
+                        title="Mark Fail"
+                        style="width: 28px; height: 28px; border-radius: 6px; border: 1px solid; cursor: pointer; font-size: 13px; flex-shrink: 0; transition: all 0.15s; ${failActive}">✗</button>
+                    <span style="flex: 1; font-size: 13px; color: #d4d4d8; line-height: 1.4;">${escapeHtml(item.text)}</span>
+                    <span style="font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 4px; letter-spacing: 0.06em; flex-shrink: 0; ${statusLabelStyle}">${statusLabel}</span>
+                </div>`;
+        }).join('');
+
+        html += `
+            <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 16px 18px; margin-bottom: 14px;">
+                <!-- Section Header -->
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+                    <span style="font-size: 18px;">${sec.icon}</span>
+                    <span style="font-size: 14px; font-weight: 600; color: #f4f4f5; flex: 1;">${escapeHtml(sec.title)}</span>
+                    <span style="font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 20px; ${badgeStyle}">${secPassed}/${secTotal} passed</span>
+                    <button class="qac-pass-section-btn"
+                        data-section="${sec.id}"
+                        style="padding: 4px 10px; background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.25); border-radius: 6px; color: #4ade80; font-size: 11px; cursor: pointer;">
+                        Pass All
+                    </button>
+                </div>
+                <!-- Section Progress Bar -->
+                <div style="height: 4px; background: rgba(255,255,255,0.06); border-radius: 4px; margin-bottom: 12px; overflow: hidden;">
+                    <div style="height: 100%; width: ${secPct}%; background: ${progressColor}; border-radius: 4px; transition: width 0.3s ease;"></div>
+                </div>
+                <!-- Items -->
+                ${itemRows}
+            </div>`;
+    }
+
+    if (!html) {
+        html = `<div style="text-align: center; padding: 40px; color: #52525b; font-size: 14px;">No checks match the current filters.</div>`;
+    }
+
+    container.innerHTML = html;
+}
+
+function _qacBindEvents(root) {
+    _qacBound = true;
+
+    root.addEventListener('input', function (e) {
+        if (e.target.id === 'qac-search') {
+            _qacSearch = e.target.value;
+            _qacUpdateSections();
+            _qacUpdateStats();
+        }
+    });
+
+    root.addEventListener('change', function (e) {
+        if (e.target.id === 'qac-section-filter') {
+            _qacSectionFilter = e.target.value;
+            _qacUpdateSections();
+        } else if (e.target.id === 'qac-status-filter') {
+            _qacStatusFilter = e.target.value;
+            _qacUpdateSections();
+        }
+    });
+
+    root.addEventListener('click', function (e) {
+        const btn = e.target.closest('[data-action]');
+        if (btn && btn.dataset.action && btn.dataset.id) {
+            const id = btn.dataset.id;
+            const action = btn.dataset.action; // 'pass' or 'fail'
+            const current = _qacStatus(id);
+            // Toggle: clicking same status again resets to pending
+            _qacSet(id, current === action ? 'pending' : action);
+            _qacUpdateSections();
+            _qacUpdateStats();
+            return;
+        }
+
+        const secBtn = e.target.closest('.qac-pass-section-btn');
+        if (secBtn && secBtn.dataset.section) {
+            const sec = QA_SECTIONS.find(s => s.id === secBtn.dataset.section);
+            if (sec) {
+                for (const item of sec.items) {
+                    _qacSet(item.id, 'pass');
+                }
+                _qacUpdateSections();
+                _qacUpdateStats();
+            }
+            return;
+        }
+
+        if (e.target.id === 'qac-pass-all-visible') {
+            const visible = _qacVisible();
+            for (const { item } of visible) {
+                _qacSet(item.id, 'pass');
+            }
+            _qacUpdateSections();
+            _qacUpdateStats();
+            return;
+        }
+
+        if (e.target.id === 'qac-fail-all-visible') {
+            const visible = _qacVisible();
+            for (const { item } of visible) {
+                _qacSet(item.id, 'fail');
+            }
+            _qacUpdateSections();
+            _qacUpdateStats();
+            return;
+        }
+
+        if (e.target.id === 'qac-reset') {
+            if (confirm('Reset all QA checks for this project? This cannot be undone.')) {
+                _qacItems = {};
+                _qacSave();
+                _qacUpdateSections();
+                _qacUpdateStats();
+            }
+            return;
+        }
+
+        if (e.target.id === 'qac-export') {
+            _qacExport();
+            return;
+        }
+    });
+}
+
+function _qacExport() {
+    const project = activeProject || '_global';
+    const s = _qacStats();
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const lines = [];
+
+    lines.push('QA CHECKLIST REPORT');
+    lines.push('===================');
+    lines.push(`Project  : ${project}`);
+    lines.push(`Date     : ${new Date().toLocaleString()}`);
+    lines.push(`Progress : ${s.passed}/${s.total} passed (${s.pct}%) | ${s.failed} failed | ${s.pending} pending`);
+    lines.push('');
+
+    for (const sec of QA_SECTIONS) {
+        let secPassed = 0;
+        for (const item of sec.items) {
+            if (_qacStatus(item.id) === 'pass') secPassed++;
+        }
+        lines.push(`${sec.icon}  ${sec.title}  [${secPassed}/${sec.items.length}]`);
+        lines.push('─'.repeat(60));
+        for (const item of sec.items) {
+            const st = _qacStatus(item.id);
+            const mark = st === 'pass' ? '✓' : st === 'fail' ? '✗' : '○';
+            lines.push(`  ${mark}  ${item.text}`);
+        }
+        lines.push('');
+    }
+
+    lines.push('─'.repeat(60));
+    lines.push(`TOTAL: ${s.passed} PASS  |  ${s.failed} FAIL  |  ${s.pending} PENDING  |  ${s.pct}% complete`);
+
+    const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `qa-checklist-${project}-${timestamp}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
 }

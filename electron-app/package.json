@@ -1,10 +1,13 @@
 {
   "name": "testmate-ai-desktop",
   "version": "1.0.0",
+  "description": "TestMate AI — Automated Mobile Game QA",
   "main": "main.js",
   "scripts": {
     "start": "node start-electron.js",
-    "build": "electron-builder"
+    "build": "electron-builder",
+    "build:mac": "electron-builder --mac",
+    "build:win": "electron-builder --win"
   },
   "devDependencies": {
     "electron": "^30.5.1",
@@ -12,21 +15,49 @@
   },
   "dependencies": {
     "app-info-parser": "^1.1.6",
-    "electron-is-dev": "^3.0.1"
+    "electron-is-dev": "^3.0.1",
+    "unzipper": "^0.12.3"
   },
   "build": {
+    "appId": "com.funcell.testmate",
+    "productName": "TestMate AI",
+    "asar": true,
+    "asarUnpack": [
+      "agent/adb/**",
+      "agent/proxy/**",
+      "agent/utils/toolPaths.js"
+    ],
+    "files": [
+      "**/*",
+      "!agent/node_modules",
+      "!node_modules/.cache",
+      "!dist/**"
+    ],
     "extraResources": [
       {
         "from": "../tools/",
         "to": "tools/",
-        "filter": [
-          "**/*"
-        ]
+        "filter": ["**/*"]
       }
     ],
-    "asar": true,
     "directories": {
       "output": "dist"
+    },
+    "mac": {
+      "target": [{ "target": "dmg", "arch": ["arm64", "x64"] }],
+      "category": "public.app-category.developer-tools"
+    },
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "TestMate AI"
+    },
+    "dmg": {
+      "title": "TestMate AI",
+      "window": { "width": 540, "height": 380 }
     }
   }
 }
