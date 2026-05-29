@@ -9,6 +9,8 @@ const memoryAnalyzer = require('./advanced/memoryAnalyzer'); // Keeping this in 
 const runtimeIntelligence = require('./advanced/runtimeIntelligence');
 const iapValidationEngine = require('./advanced/iapValidationEngine');
 const gameplayBlockerDetector = require('./advanced/gameplayBlockerDetector');
+const { fbEventTracker } = require('./advanced/eventAnalyzers/fbEventTracker');
+const { choiceEventTracker } = require('./advanced/eventAnalyzers/choiceEventTracker');
 
 let logcatInterval = null;
 let monitorInterval = null;
@@ -119,9 +121,14 @@ const start = async (packageName, onData, logPath, deviceId = null) => {
             await adbHelper.runADB(['-s', deviceId, 'shell', 'setprop', 'log.tag.AdMob', 'VERBOSE']);
             // GameAnalytics
             await adbHelper.runADB(['-s', deviceId, 'shell', 'setprop', 'log.tag.GameAnalytics', 'VERBOSE']);
-            // Facebook SDK
+            // Facebook SDK — multiple tag variants across SDK versions.
+            // setprop alone isn't sufficient (FB SDK also gates on its own debug
+            // flag), but it removes Android's tag-level filter so anything FB
+            // chooses to emit actually reaches us.
             await adbHelper.runADB(['-s', deviceId, 'shell', 'setprop', 'log.tag.FacebookSDK', 'VERBOSE']);
             await adbHelper.runADB(['-s', deviceId, 'shell', 'setprop', 'log.tag.FBTRACE', 'VERBOSE']);
+            await adbHelper.runADB(['-s', deviceId, 'shell', 'setprop', 'log.tag.AppEvents', 'VERBOSE']);
+            await adbHelper.runADB(['-s', deviceId, 'shell', 'setprop', 'log.tag.FBSDKAppEvents', 'VERBOSE']);
             // AppsFlyer
             await adbHelper.runADB(['-s', deviceId, 'shell', 'setprop', 'log.tag.AppsFlyerLib', 'VERBOSE']);
             // Adjust
@@ -133,6 +140,8 @@ const start = async (packageName, onData, logPath, deviceId = null) => {
         // Reset advanced analyzers
         try { if (networkAnalyzer) networkAnalyzer.reset(); } catch (e) { }
         try { if (memoryAnalyzer) memoryAnalyzer.reset(); } catch (e) { }
+        try { fbEventTracker.init({ packageName }); } catch (e) { }
+        try { choiceEventTracker.init({ packageName }); } catch (e) { }
         try {
             if (runtimeIntelligence) {
                 runtimeIntelligence.reset();
@@ -215,6 +224,8 @@ const fetchAndSend = async (deviceId, pkg, onData) => {
                     if (gameplayBlockerDetector && gameplayBlockerDetector.data.isActive) {
                         gameplayBlockerDetector.analyzeLogs(lines);
                     }
+                    try { fbEventTracker.processLines(lines); } catch (e) { /* never let parser kill the monitor */ }
+                    try { choiceEventTracker.processLines(lines); } catch (e) { /* never let parser kill the monitor */ }
                 }
             }
         } catch (err) { }

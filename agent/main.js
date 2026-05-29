@@ -24,6 +24,13 @@ const iapValidationEngine = require('./advanced/iapValidationEngine');
 const deviceMatcher = require('./utils/deviceMatcher');
 const performanceScaler = require('./utils/performanceScaler');
 const qaChecklistManager = require('./manager/qaChecklistManager');
+const scrcpyManager = require('./cast/scrcpyManager');
+const { fbEventTracker } = require('./advanced/eventAnalyzers/fbEventTracker');
+const { choiceEventTracker } = require('./advanced/eventAnalyzers/choiceEventTracker');
+const saveStateMonitor = require('./advanced/saveStateMonitor');
+const textOverflowDetector = require('./advanced/textOverflowDetector');
+const platformDispatch = require('./platformDispatch');
+const ipaAnalyzer = require('./ios/ipaAnalyzer');
 
 
 class QAAgent {
@@ -71,6 +78,20 @@ class QAAgent {
         try {
             if (!this.currentProject) throw new Error('No project selected. Create or select a project first.');
 
+            // Platform gate — iOS runtime sessions aren't implemented yet (Phase 1
+            // is static-only). Throw early with a clear message rather than
+            // letting the Android adb path silently fail on an IPA.
+            const platform = platformDispatch.detectPlatform(apkPath);
+            if (platform === platformDispatch.PLATFORM_IOS) {
+                throw new Error(
+                    'iOS test sessions are not yet implemented (Phase 1 is static analysis only). ' +
+                    'Use the Static Analysis tab to view IPA contents. Runtime support is planned for Phase 2 (Mac-only).'
+                );
+            }
+            if (platform === platformDispatch.PLATFORM_UNKNOWN && apkPath) {
+                throw new Error('Unrecognized file type. Supported: .apk (Android), .ipa (iOS — static only).');
+            }
+
             // Step 6: Verify Flow on Start Test
             logger.logInfo("Initializing ADB session...");
             try {
@@ -99,6 +120,8 @@ class QAAgent {
             const deviceId = deviceCheck.deviceId;
             this.activeDeviceId = deviceId;
             console.log(`Using device: ${deviceId}`);
+
+            scrcpyManager.start(deviceId);
 
 
 
@@ -201,6 +224,15 @@ class QAAgent {
             // Start Performance Monitoring for the Report
             performanceMonitor.start(targetPackage, 5000);
 
+            // Start Save State Monitor — background-only, never blocks startSession.
+            // If the app isn't debuggable the monitor self-disables gracefully.
+            try { saveStateMonitor.start({ deviceId: this.activeDeviceId, packageName: targetPackage }); }
+            catch (e) { logger.logWarning(`SaveStateMonitor failed to start: ${e.message}`); }
+
+            // Start Text Overflow Detector — uiautomator-based, no extra deps,
+            // ~15s cadence. Doesn't compete with the screenshot manager.
+            try { textOverflowDetector.start({ deviceId: this.activeDeviceId, packageName: targetPackage }); }
+            catch (e) { logger.logWarning(`TextOverflowDetector failed to start: ${e.message}`); }
 
             return { success: true, sessionId: this.currentSessionId };
         } catch (error) {
@@ -213,6 +245,7 @@ class QAAgent {
         if (!this.currentSessionId) throw new Error('No active session to stop');
 
         try {
+            scrcpyManager.stop();
             screenshotManager.stopScreenshotCapture();
             const sessionDir = path.join(
                 projectManager.getProjectPath(this.currentProject), 'sessions', this.currentSessionId
@@ -237,6 +270,10 @@ class QAAgent {
             networkAnalyzer.stopPingTracking();
             networkAnalyzer.stopNetworkUsageTracking();
             networkAnalyzer.stopNetworkDropDetection();
+
+            // Capture final save-state snapshot for the report.
+            try { await saveStateMonitor.stop(); } catch (e) { logger.logWarning(`SaveStateMonitor.stop: ${e.message}`); }
+            try { await textOverflowDetector.stop(); } catch (e) { logger.logWarning(`TextOverflowDetector.stop: ${e.message}`); }
 
             const sessionId = this.currentSessionId;
             const duration = Math.floor((Date.now() - this.startTime) / 1000);
@@ -271,6 +308,18 @@ class QAAgent {
             // is the new source of truth for the manual portion of the saved report.
             const qaChecklistSnapshot = qaChecklistManager.exportReport(this.currentProject);
 
+            // Snapshot FB events so the saved report includes them; tracker
+            // keeps the snapshot until the next session resets it, but we
+            // capture here to guarantee the report is consistent with this run.
+            let fbEventsSnapshot = null;
+            try { fbEventsSnapshot = fbEventTracker.getReportSummary(); } catch (_) {}
+            let choiceEventsSnapshot = null;
+            try { choiceEventsSnapshot = choiceEventTracker.getReportSummary(); } catch (_) {}
+            let saveStateSnapshot = null;
+            try { saveStateSnapshot = saveStateMonitor.getReportSummary(); } catch (_) {}
+            let textOverflowSnapshot = null;
+            try { textOverflowSnapshot = textOverflowDetector.getReportSummary(); } catch (_) {}
+
             const reportData = reportGenerator.generateReport(
                 analysis,
                 this.launchResult,
@@ -279,7 +328,7 @@ class QAAgent {
                 uiAnalysis,
                 this.advancedAuditData,
                 this.currentApkInfo,
-                { testValidation: testValidationSnapshot, qaChecklistSnapshot }
+                { testValidation: testValidationSnapshot, qaChecklistSnapshot, fbEvents: fbEventsSnapshot, choiceEvents: choiceEventsSnapshot, saveState: saveStateSnapshot, textOverflow: textOverflowSnapshot }
             );
 
             const memorySamples = this.performanceData?.memory || [];
@@ -341,13 +390,88 @@ class QAAgent {
         }
     }
 
-    async analyzeAPK(apkPath) {
+    /**
+     * Live snapshot of Facebook App Events captured during the current session.
+     * Returns an empty snapshot before the session starts, and the final
+     * session snapshot until a new session resets the tracker.
+     */
+    getFbEvents() {
         try {
-            this.currentApkInfo = await apkAnalyzer.analyze(apkPath);
+            return fbEventTracker.getSnapshot();
+        } catch (err) {
+            logger.logError(`getFbEvents error: ${err.message}`);
+            return null;
+        }
+    }
+
+    /**
+     * Live snapshot of narrative-game choice events captured during the
+     * current session. Mirrors getFbEvents shape — safe to call any time;
+     * returns an empty snapshot when nothing has been captured.
+     */
+    getChoiceEvents() {
+        try {
+            return choiceEventTracker.getSnapshot();
+        } catch (err) {
+            logger.logError(`getChoiceEvents error: ${err.message}`);
+            return null;
+        }
+    }
+
+    /**
+     * Live snapshot of save-state monitor results. Returns counts of tracked
+     * files + diff findings + the latest snapshot's file inventory (metadata
+     * only — no file content). Safe to call any time.
+     */
+    getSaveState() {
+        try {
+            return saveStateMonitor.getSnapshot();
+        } catch (err) {
+            logger.logError(`getSaveState error: ${err.message}`);
+            return null;
+        }
+    }
+
+    /**
+     * Live snapshot of text-overflow detector results. Returns per-finding
+     * details (truncated, clipped, missing-string, empty TextView) plus
+     * counts by severity. Safe to call any time.
+     */
+    getTextOverflow() {
+        try {
+            return textOverflowDetector.getSnapshot();
+        } catch (err) {
+            logger.logError(`getTextOverflow error: ${err.message}`);
+            return null;
+        }
+    }
+
+    async analyzeAPK(apkPath) {
+        // Backwards-compatible entry point. Renderer/IPC still calls "analyzeAPK"
+        // and "apkPath" even when the file is an IPA; we dispatch by extension
+        // and adapt the result shape so the rest of the agent + UI stay uniform.
+        try {
+            const platform = platformDispatch.detectPlatform(apkPath);
+
+            if (platform === platformDispatch.PLATFORM_IOS) {
+                // Static IPA analysis works on any host OS (it's pure file parsing).
+                // Runtime / session features will refuse later if not on macOS.
+                const raw = await ipaAnalyzer.analyzeIpa(apkPath);
+                this.currentApkInfo = adaptIpaToCommonShape(raw, apkPath);
+            } else if (platform === platformDispatch.PLATFORM_ANDROID) {
+                this.currentApkInfo = await apkAnalyzer.analyze(apkPath);
+            } else {
+                logger.logWarning(`Unknown file type for ${apkPath} — defaulting to APK analyzer`);
+                this.currentApkInfo = await apkAnalyzer.analyze(apkPath);
+            }
+
             this.currentApkName = apkPath ? path.basename(apkPath) : null;
-            if (this.currentApkInfo) this.currentApkInfo.apkName = this.currentApkName;
-            // New APK → drop preflight cache + session-run flag so the QA Checklist's
-            // Automated pane re-runs static checks for the new build.
+            if (this.currentApkInfo) {
+                this.currentApkInfo.apkName = this.currentApkName;
+                this.currentApkInfo.platform = platform;
+            }
+            // New APK / IPA → drop preflight cache + session-run flag so the QA
+            // Checklist's Automated pane re-runs static checks for the new build.
             this.preflightCache = { apkPath: null, result: null };
             this.sessionRun = false;
             return this.currentApkInfo;
@@ -569,6 +693,59 @@ class QAAgent {
     }
 }
 
+
+// ── IPA → APK-shape adapter ────────────────────────────────────────────────
+// Translates ipaAnalyzer's native iOS output into the same shape the renderer
+// already understands (packageName / versionName / minSdk / sdkInfo etc.) so
+// the existing Static Analysis tab and report generator work unchanged.
+// iOS-specific fields stay tucked under iosInfo for any future iOS-aware UI.
+function adaptIpaToCommonShape(raw, ipaPath) {
+    if (!raw) return null;
+    const adsSdks = ['AdMob', 'AppLovin/MAX', 'IronSource', 'Facebook SDK'];
+    return {
+        // APK-equivalent surface
+        packageName:   raw.bundleId || null,
+        appLabel:      raw.displayName || raw.bundleName || null,
+        versionName:   raw.version || null,
+        versionCode:   raw.build || null,
+        minSdk:        raw.minimumOSVersion ? `iOS ${raw.minimumOSVersion}` : null,
+        targetSdk:     raw.platformVersion ? `iOS ${raw.platformVersion}` : null,
+        permissions:   (raw.permissions || []).map(p => p.key),
+        permissionsWithReason: raw.permissions || [],
+        exportedComponents: [],
+        security: raw.ats ? {
+            allowCleartextTraffic: raw.ats.allowsArbitraryLoads,
+            allowsLocalNetworking: raw.ats.allowsLocalNetworking,
+            usesCleartextTraffic:  raw.ats.allowsArbitraryLoads,
+            atsExceptionDomains:   raw.ats.exceptionDomains || []
+        } : null,
+        sdkInfo: {
+            engine:   raw.engine || 'Native',
+            firebase: raw.sdks.includes('Firebase'),
+            ads:      raw.sdks.some(s => adsSdks.includes(s))
+        },
+        sdkIntelligence: null,    // populated by separate iOS SDK intel scan later
+        // iOS-only surface (rendered when available)
+        iosInfo: {
+            ipaPath,
+            appName: raw.appName,
+            appBundlePath: raw.appBundlePath,
+            deviceFamily: raw.deviceFamily,
+            supportedPlatforms: raw.supportedPlatforms,
+            urlSchemes: raw.urlSchemes,
+            executable: raw.executable,
+            frameworks: raw.frameworks,
+            sdks: raw.sdks,
+            provisioning: raw.provisioning,
+            locales: raw.locales,
+            appExtensions: raw.appExtensions,
+            bundleSize: raw.bundleSize,
+            fileCount: raw.fileCount
+        },
+        assetIntegrity: raw.assetIntegrity || null,
+        analysisErrors: raw.errors || []
+    };
+}
 
 if (require.main === module) {
     const agent = new QAAgent();

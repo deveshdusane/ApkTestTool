@@ -35,22 +35,6 @@ For unknown SDKs or custom game logs, TestMate uses Gemini AI to "understand" an
     2. Paste your **Gemini API Key**.
     3. Events identified by AI will be marked with a `🤖` icon in the timeline.
 
-### 3. Full Release Build Coverage (Phase 3)
-Release builds often strip logs, making standard logcat detection impossible. To solve this, TestMate uses a **Network Proxy** to intercept SDK traffic directly.
-
-#### A. Install the CA Certificate
-To see HTTPS traffic from SDKs like Firebase or Facebook on a release build:
-1.  Click **"Export CA Cert"** in TestMate settings.
-2.  Transfer the `testmate-ca.crt` file to your test device.
-3.  On the device, go to **Settings > Security > Encryption & Credentials > Install from storage**.
-4.  Select **CA Certificate** and choose the TestMate file.
-    > *Note: Android 7+ requires your app to have a `network_security_config.xml` that trusts user certificates, or you must use a Rooted/Debug build.*
-
-#### B. Enable Proxy Routing
-1.  In the Test Session tab, toggle **"Enable Network Interception"**.
-2.  TestMate will automatically configure ADB port forwarding and device proxy settings.
-3.  All analytics traffic will now flow through the **Runtime Events** feed, even if logcat is silent.
-
 ---
 
 ## 🔑 Key Configuration
@@ -58,7 +42,6 @@ To see HTTPS traffic from SDKs like Firebase or Facebook on a release build:
 | Item | Requirement | Purpose |
 |---|---|---|
 | **Gemini API Key** | Optional | Enables AI classification of unknown/custom log events. |
-| **CA Certificate** | Required for Phase 3 | Allows decryption of HTTPS analytics traffic (Firebase/GA). |
 | **ADB Debugging** | Mandatory | Primary data pipe for all runtime intelligence. |
 | **USB Debug Props** | Auto-set | TestMate forces `log.tag.<SDK> VERBOSE` at session start. |
 
@@ -67,7 +50,6 @@ To see HTTPS traffic from SDKs like Firebase or Facebook on a release build:
 ## 📈 Accuracy Levels
 
 *   **HIGH (logcat):** Direct string match from SDK logs. 100% accurate.
-*   **MEDIUM (proxy):** Intercepted network request. 95% accurate (depends on cert trust).
 *   **INFERRED (AI):** AI-guessed event based on context. 80-90% accurate.
 
 ---

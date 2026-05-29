@@ -28,6 +28,31 @@ contextBridge.exposeInMainWorld('api', {
     // Predictions
     getPredictions:   ()              => ipcRenderer.invoke('get-predictions'),
 
+    // Facebook App Events live snapshot
+    getFbEvents:      ()              => ipcRenderer.invoke('get-fb-events'),
+
+    // Narrative-game choice events live snapshot
+    getChoiceEvents:  ()              => ipcRenderer.invoke('get-choice-events'),
+
+    // Save-state monitor live snapshot
+    getSaveState:     ()              => ipcRenderer.invoke('get-save-state'),
+
+    // Text overflow detector live snapshot
+    getTextOverflow:  ()              => ipcRenderer.invoke('get-text-overflow'),
+
+    // Wireless ADB — connection management
+    wireless: {
+        discover:        ()                  => ipcRenderer.invoke('wireless-discover'),
+        listKnown:       ()                  => ipcRenderer.invoke('wireless-list-known'),
+        bootstrapUsb:    (usbSerial)         => ipcRenderer.invoke('wireless-bootstrap-usb', { usbSerial }),
+        pairAndConnect:  (input)             => ipcRenderer.invoke('wireless-pair-connect', input),
+        reconnect:       (serial)            => ipcRenderer.invoke('wireless-reconnect', { serial }),
+        autoReconnect:   ()                  => ipcRenderer.invoke('wireless-auto-reconnect'),
+        disconnect:      (ip, port)          => ipcRenderer.invoke('wireless-disconnect', { ip, port }),
+        forget:          (serial)            => ipcRenderer.invoke('wireless-forget', { serial }),
+        setLastActive:   (serial)            => ipcRenderer.invoke('wireless-set-last-active', { serial })
+    },
+
     // Cleanup
     deleteProject:    (name)          => ipcRenderer.invoke('delete-project', name),
 

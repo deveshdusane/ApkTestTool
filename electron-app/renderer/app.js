@@ -421,10 +421,11 @@ dropZone.addEventListener('drop', e => {
     e.preventDefault();
     dropZone.classList.remove('hover');
     const file = e.dataTransfer.files[0];
-    if (file?.name.endsWith('.apk')) {
+    const name = (file && file.name) || '';
+    if (/\.(apk|ipa)$/i.test(name)) {
         setApk(file.path, file.name);
     } else {
-        addLog('❌ Please drop a valid .apk file', 'error');
+        addLog('❌ Please drop a valid .apk or .ipa file', 'error');
     }
 });
 
@@ -466,6 +467,10 @@ async function setApk(filePath, fileName) {
 
 function renderStaticAnalysis(info) {
     if (!info) return;
+
+    // Platform indicator — show an info banner for iOS builds explaining that
+    // runtime session is not yet wired (Phase 1 is static-only).
+    showPlatformBanner(info);
 
     apkInfoPkg.textContent = info.packageName || 'Unknown';
     apkInfoVer.textContent = `${info.versionName || 'N/A'} (Build ${info.versionCode || 'N/A'})`;
@@ -560,8 +565,236 @@ function renderStaticAnalysis(info) {
         securityCleartextStatus.style.color = s.usesCleartextTraffic ? '#fca5a5' : '#2dd4bf';
     }
 
+    renderAssetIntegrity(info.assetIntegrity);
+    renderIosInfo(info.iosInfo);
+
     staticContent.classList.remove('hidden');
     staticEmptyState.classList.add('hidden');
+}
+
+// iOS-specific banner shown at the top of the Static Analysis tab so the
+// tester immediately knows static-only mode is in effect and the Start Test
+// button will not run a real iOS session in Phase 1.
+function showPlatformBanner(info) {
+    let banner = document.getElementById('platform-banner');
+    if (!banner) {
+        banner = document.createElement('div');
+        banner.id = 'platform-banner';
+        banner.className = 'platform-banner hidden';
+        const host = document.getElementById('static-content') || staticContent;
+        if (host && host.firstChild) host.insertBefore(banner, host.firstChild);
+        else if (host) host.appendChild(banner);
+    }
+    if (info && info.platform === 'ios') {
+        banner.classList.remove('hidden');
+        banner.classList.add('platform-banner-ios');
+        banner.innerHTML =
+            '<span class="platform-banner-icon">🍎</span>' +
+            '<div>' +
+                '<b>iOS build (.ipa) — static analysis only.</b> ' +
+                'Bundle ID, version, frameworks, SDKs, permissions, code signing and provisioning are extracted from the IPA on any host OS. ' +
+                'Runtime session (install, syslog, performance) requires a Mac with libimobiledevice + Xcode and is planned for Phase 2.' +
+            '</div>';
+    } else {
+        banner.classList.add('hidden');
+        banner.classList.remove('platform-banner-ios');
+    }
+}
+
+function renderIosInfo(iosInfo) {
+    let card = document.getElementById('ios-info-card');
+    if (!iosInfo) {
+        if (card) card.classList.add('hidden');
+        return;
+    }
+    if (!card) {
+        // Build the card lazily so we don't inflate the DOM for Android-only sessions.
+        card = document.createElement('div');
+        card.id = 'ios-info-card';
+        card.className = 'card ios-card';
+        const host = document.getElementById('static-content') || staticContent;
+        if (host) host.appendChild(card);
+    }
+    card.classList.remove('hidden');
+
+    const prov = iosInfo.provisioning || {};
+    const profileKind = prov.isAppStore ? 'App Store'
+                      : prov.isEnterprise ? 'Enterprise'
+                      : prov.isAdHoc ? 'Ad Hoc / Development'
+                      : 'Unknown';
+    const expiresAt = prov.expirationDate ? new Date(prov.expirationDate) : null;
+    const expiresStr = expiresAt && !isNaN(expiresAt.getTime())
+        ? expiresAt.toLocaleDateString() + ' (' + Math.round((expiresAt - Date.now()) / 86400000) + ' days)'
+        : '—';
+
+    card.innerHTML =
+        '<div class="ios-header">' +
+            '<div class="ios-title"><span class="ios-icon">🍎</span><span>iOS Build Details</span><span class="ios-tag">IPA</span></div>' +
+        '</div>' +
+        '<div class="ios-kpis">' +
+            kpi('Engine',            iosInfo.engine || '—', '') +
+            kpi('Architectures',     (iosInfo.executable && iosInfo.executable.archs || []).join(', ') || '—', '') +
+            kpi('Bundle Size',       iosInfo.bundleSize ? (iosInfo.bundleSize / 1048576).toFixed(1) + ' MB' : '—', '') +
+            kpi('Files',             iosInfo.fileCount || 0, '') +
+        '</div>' +
+        '<div class="ios-section">' +
+            '<div class="ios-section-head">Device Family</div>' +
+            '<div>' + (iosInfo.deviceFamily || []).map(d => '<span class="ios-pill">' + escapeHtml(d) + '</span>').join(' ') + '</div>' +
+        '</div>' +
+        '<div class="ios-section">' +
+            '<div class="ios-section-head">Frameworks (' + (iosInfo.frameworks || []).length + ')</div>' +
+            '<div class="ios-fw-list">' +
+                (iosInfo.frameworks || []).slice(0, 50).map(f => '<code class="ios-fw">' + escapeHtml(f) + '</code>').join('') +
+                ((iosInfo.frameworks || []).length > 50 ? '<span class="ios-more">+ ' + ((iosInfo.frameworks || []).length - 50) + ' more</span>' : '') +
+            '</div>' +
+        '</div>' +
+        '<div class="ios-section">' +
+            '<div class="ios-section-head">Detected SDKs</div>' +
+            '<div>' + (iosInfo.sdks || []).map(s => '<span class="ios-pill ios-pill-sdk">' + escapeHtml(s) + '</span>').join(' ') + '</div>' +
+        '</div>' +
+        '<div class="ios-section">' +
+            '<div class="ios-section-head">Provisioning Profile</div>' +
+            '<div class="ios-prov">' +
+                '<div><span class="ios-prov-k">Type:</span> <b>' + escapeHtml(profileKind) + '</b></div>' +
+                '<div><span class="ios-prov-k">Team:</span> ' + escapeHtml(prov.teamName || '—') + ' <span class="ios-prov-id">(' + escapeHtml(prov.teamId || '—') + ')</span></div>' +
+                '<div><span class="ios-prov-k">Devices on profile:</span> ' + (prov.provisionedDeviceCount || 0) + '</div>' +
+                '<div><span class="ios-prov-k">Expires:</span> ' + escapeHtml(expiresStr) + '</div>' +
+            '</div>' +
+        '</div>' +
+        '<div class="ios-section">' +
+            '<div class="ios-section-head">Localization (' + (iosInfo.locales || []).length + ' .lproj)</div>' +
+            '<div>' + (iosInfo.locales || []).map(l => '<span class="ios-pill ios-pill-loc">' + escapeHtml(l) + '</span>').join(' ') + '</div>' +
+        '</div>' +
+        ((iosInfo.urlSchemes || []).length > 0
+            ? '<div class="ios-section"><div class="ios-section-head">URL Schemes</div><div>' +
+                iosInfo.urlSchemes.map(u => '<code class="ios-url">' + escapeHtml(u) + '</code>').join(' ') +
+              '</div></div>'
+            : '');
+
+    function kpi(label, value, sub) {
+        return '<div class="ios-kpi">' +
+            '<div class="ios-kpi-label">' + escapeHtml(label) + '</div>' +
+            '<div class="ios-kpi-value">' + escapeHtml(String(value)) + '</div>' +
+            (sub ? '<div class="ios-kpi-sub">' + escapeHtml(sub) + '</div>' : '') +
+        '</div>';
+    }
+}
+
+// ─── Asset Integrity panel ───────────────────────────────────────────────────
+// Renders the result from assetIntegrityAnalyzer.analyzeAssets() into the
+// dedicated card in the Static Analysis tab. No polling — the data is
+// computed once per APK at analyzeAPK time and flows through info.assetIntegrity.
+function renderAssetIntegrity(ai) {
+    const setText = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
+    const setHTML = (id, h) => { const el = document.getElementById(id); if (el) el.innerHTML = h; };
+    const fmtMB = b => (Number(b || 0) / 1048576).toFixed(2);
+
+    if (!ai || !ai.summary) {
+        setText('ai-warnings-count', '—');
+        setText('ai-zero-byte', '—');
+        setText('ai-tiny-audio', '—');
+        setText('ai-dups', '—');
+        setText('ai-dup-waste', '— MB wasted');
+        setText('ai-locales', '—');
+        setText('ai-loc-completeness', '—');
+        setHTML('ai-cat-grid', '<div class="ai-empty">Analyze an APK to populate.</div>');
+        setHTML('ai-warn-list', '<div class="ai-empty">No findings yet.</div>');
+        setHTML('ai-details', '<div class="ai-empty">Analyze an APK to see details.</div>');
+        return;
+    }
+
+    const s = ai.summary;
+    const warnCount = (ai.warnings || []).length;
+    const warnCountEl = document.getElementById('ai-warnings-count');
+    if (warnCountEl) {
+        warnCountEl.textContent = warnCount === 0 ? '✓ clean' : warnCount + ' finding' + (warnCount === 1 ? '' : 's');
+        warnCountEl.className = 'ai-warnings-count ' + (warnCount === 0 ? 'ai-clean' : 'ai-has-warnings');
+    }
+
+    setText('ai-zero-byte', s.zeroByteCount);
+    setText('ai-tiny-audio', s.suspiciousAudioCount);
+    setText('ai-dups', s.duplicateGroupCount);
+    setText('ai-dup-waste', fmtMB(s.dupWastedBytes) + ' MB wasted');
+    setText('ai-locales', s.localesCount);
+    setText('ai-loc-completeness', s.localesCount > 0 ? s.localizationCompleteness + '%' : '—');
+
+    // Categories grid
+    const cats = ai.categories || {};
+    const catOrder = Object.entries(cats).sort((a, b) => b[1].bytes - a[1].bytes);
+    if (catOrder.length === 0) {
+        setHTML('ai-cat-grid', '<div class="ai-empty">No assets classified.</div>');
+    } else {
+        const totalBytes = Object.values(cats).reduce((sum, c) => sum + c.bytes, 0);
+        setHTML('ai-cat-grid', catOrder.map(([cat, c]) => {
+            const pct = totalBytes > 0 ? (c.bytes / totalBytes * 100) : 0;
+            return '<div class="ai-cat">' +
+                '<div class="ai-cat-name">' + escapeHtml(cat) + '</div>' +
+                '<div class="ai-cat-bar"><div class="ai-cat-bar-fill" style="width:' + pct.toFixed(1) + '%"></div></div>' +
+                '<div class="ai-cat-meta"><span>' + c.count + ' files</span><span>' + fmtMB(c.bytes) + ' MB</span></div>' +
+            '</div>';
+        }).join(''));
+    }
+
+    // Warnings (findings) list
+    const warnings = ai.warnings || [];
+    if (warnings.length === 0) {
+        setHTML('ai-warn-list', '<div class="ai-warn ai-warn-clean">✓ No integrity issues found.</div>');
+    } else {
+        setHTML('ai-warn-list', warnings.map(w => {
+            const icon = w.level === 'error' ? '✗' : w.level === 'warn' ? '⚠' : 'ℹ';
+            return '<div class="ai-warn ai-warn-' + escapeHtml(w.level) + '">' +
+                '<span class="ai-warn-icon">' + icon + '</span>' +
+                '<div class="ai-warn-body">' +
+                    '<div class="ai-warn-msg">' + escapeHtml(w.message) + '</div>' +
+                    '<div class="ai-warn-code">' + escapeHtml(w.code) + '</div>' +
+                '</div>' +
+            '</div>';
+        }).join(''));
+    }
+
+    // Details: collapsibles for zero-byte / tiny audio / duplicates / locales
+    const blocks = [];
+    if ((ai.zeroByteFiles || []).length > 0) {
+        blocks.push(buildAiDetailsBlock('Zero-byte files (' + ai.zeroByteFiles.length + ')',
+            ai.zeroByteFiles.map(p => '<div class="ai-detail-row"><code>' + escapeHtml(p) + '</code></div>').join('')));
+    }
+    if ((ai.suspiciousAudio || []).length > 0) {
+        blocks.push(buildAiDetailsBlock('Tiny audio (' + ai.suspiciousAudio.length + ')',
+            ai.suspiciousAudio.map(a => '<div class="ai-detail-row"><span class="ai-detail-meta">' + a.bytes + ' B</span><code>' + escapeHtml(a.path) + '</code></div>').join('')));
+    }
+    if ((ai.duplicates || []).length > 0) {
+        const dupHtml = ai.duplicates.slice(0, 30).map(d =>
+            '<div class="ai-dup-group">' +
+                '<div class="ai-dup-header"><span>' + d.files.length + ' copies · ' + fmtMB(d.wastedBytes) + ' MB wasted</span><span class="ai-sha">' + escapeHtml(d.sha1.slice(0, 10)) + '</span></div>' +
+                d.files.slice(0, 5).map(p => '<div class="ai-detail-row"><code>' + escapeHtml(p) + '</code></div>').join('') +
+                (d.files.length > 5 ? '<div class="ai-detail-more">+' + (d.files.length - 5) + ' more</div>' : '') +
+            '</div>'
+        ).join('');
+        const extra = ai.duplicates.length > 30 ? '<div class="ai-detail-more">+' + (ai.duplicates.length - 30) + ' more groups</div>' : '';
+        blocks.push(buildAiDetailsBlock('Duplicate groups (' + ai.duplicates.length + ')', dupHtml + extra));
+    }
+    if ((ai.localization?.locales || []).length > 0) {
+        const locHtml = ai.localization.locales.map(l => {
+            const m = (l.missing || []).slice(0, 8).map(k => '<code>' + escapeHtml(k) + '</code>').join(', ');
+            const extra = (l.missing || []).length > 8 ? ' <span class="ai-detail-more">+' + (l.missing.length - 8) + ' more</span>' : '';
+            return '<div class="ai-locale-row">' +
+                '<div class="ai-locale-head"><b>' + escapeHtml(l.locale) + '</b> — ' + l.keyCount + ' keys, ' + (l.missing || []).length + ' missing</div>' +
+                ((l.missing || []).length > 0 ? '<div class="ai-locale-missing">Missing: ' + m + extra + '</div>' : '') +
+            '</div>';
+        }).join('');
+        blocks.push(buildAiDetailsBlock('Localization (' + ai.localization.locales.length + ' locale' + (ai.localization.locales.length === 1 ? '' : 's') + ')', locHtml));
+    }
+
+    setHTML('ai-details', blocks.length === 0
+        ? '<div class="ai-empty">No detail-level issues to surface — clean build.</div>'
+        : blocks.join(''));
+}
+
+function buildAiDetailsBlock(title, bodyHtml) {
+    return '<details class="ai-details-block">' +
+        '<summary class="ai-details-summary">' + escapeHtml(title) + '</summary>' +
+        '<div class="ai-details-body">' + bodyHtml + '</div>' +
+    '</details>';
 }
 
 function updateSessionState(newState) {
@@ -581,12 +814,26 @@ function updateSessionState(newState) {
         stopBtn.textContent = '■ Stop Test';
         if (reportBtn) reportBtn.classList.add('hidden');
         startTimer();
+        if (typeof startFbEventsPolling === 'function') startFbEventsPolling();
+        if (typeof startChoiceEventsPolling === 'function') startChoiceEventsPolling();
+        if (typeof startSaveStatePolling === 'function') startSaveStatePolling();
+        if (typeof startTextOverflowPolling === 'function') startTextOverflowPolling();
     } else if (sessionState === 'stopped') {
         startBtn.classList.remove('hidden');
         startBtn.disabled = !selectedApkPath;
         runningControls.classList.add('hidden');
         if (reportBtn) reportBtn.classList.add('hidden');
         stopTimer();
+        // Keep polling once more after stop so the final flushed state lands
+        // in the UI; then stop the timer.
+        if (typeof pollFbEventsOnce === 'function') pollFbEventsOnce();
+        if (typeof stopFbEventsPolling === 'function') stopFbEventsPolling();
+        if (typeof pollChoiceEventsOnce === 'function') pollChoiceEventsOnce();
+        if (typeof stopChoiceEventsPolling === 'function') stopChoiceEventsPolling();
+        if (typeof pollSaveStateOnce === 'function') pollSaveStateOnce();
+        if (typeof stopSaveStatePolling === 'function') stopSaveStatePolling();
+        if (typeof pollTextOverflowOnce === 'function') pollTextOverflowOnce();
+        if (typeof stopTextOverflowPolling === 'function') stopTextOverflowPolling();
     }
 }
 
@@ -1380,11 +1627,11 @@ if (window.api.onLiveData) {
                 });
             }
 
-            // FPS chart — slide data, keep static 0-59 labels
+            // FPS chart — slide data left→right (new on left, oldest drops off right)
             if (liveFpsChart && !isNaN(fpsNum)) {
                 const ds = liveFpsChart.data.datasets[0];
-                ds.data.push(fpsNum);
-                if (ds.data.length > FPS_WINDOW) ds.data.shift();
+                ds.data.unshift(fpsNum);
+                if (ds.data.length > FPS_WINDOW) ds.data.pop();
                 // Dynamic Y-max: give 10% headroom above peak
                 const peak = Math.max(...ds.data.filter(v => v !== null));
                 if (!isNaN(peak) && peak > 0) {
@@ -1807,7 +2054,7 @@ function renderEventsTab(runtime) {
         return;
     }
 
-    feed.innerHTML = visible.map((ev, idx) => {
+    feed.innerHTML = visible.map((ev) => {
         const cat      = ev.category || 'SYSTEM';
         const color    = EV_COLOR[cat] || '#a1a1aa';
         const bg       = EV_BG[cat]   || 'rgba(255,255,255,0.04)';
@@ -1817,30 +2064,576 @@ function renderEventsTab(runtime) {
         const aiBadge  = isAI  ? `<span class="ev-ai-badge">🤖 AI</span>`  : '';
         const netBadge = isNet ? `<span class="ev-net-badge">🌐 NET</span>` : '';
         const rowClass = isNet ? 'ev-row ev-row-net' : isAI ? 'ev-row ev-row-ai' : 'ev-row';
-        const rawId    = `ev-raw-${idx}`;
         const rawText  = ev.raw
             ? escapeHtml(ev.raw)
             : isAI  ? escapeHtml(`AI classified: ${ev.detail || ''}`)
             : isNet ? escapeHtml(`Network → ${ev.detail || ''}`)
             : escapeHtml(ev.detail || '');
-        return `<div class="${rowClass}" onclick="toggleEvRaw('${rawId}')" style="cursor:pointer;">
+        return `<div class="${rowClass}">
             <span class="ev-time-col">${ev.time}s</span>
             <span class="ev-cat-col" style="background:${bg};color:${color};">${escapeHtml(cat)}</span>
             <span class="ev-name-col">${escapeHtml(evName)}${aiBadge}${netBadge}</span>
             <span class="ev-detail-col">${escapeHtml(String(ev.detail || ''))}</span>
-        </div>
-        <div id="${rawId}" class="ev-raw-row" style="display:none;"><pre class="ev-raw-pre">${rawText}</pre></div>`;
+            <span class="ev-log-col">${rawText}</span>
+        </div>`;
     }).join('');
     feed.scrollTop = feed.scrollHeight;
 }
 
-function toggleEvRaw(id) {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.style.display = el.style.display === 'none' ? 'block' : 'none';
+
+
+// ─── FACEBOOK APP EVENTS PANEL ───────────────────────────────────────────────
+// Polls the agent's fbEventTracker via window.api.getFbEvents() every 2s
+// while a session is running and renders into the dedicated FB panel inside
+// the Runtime Events tab. Independent of the generic event feed below it —
+// shows richer detail (recorded vs flushed, validation warnings, raw params)
+// that the generic feed doesn't carry.
+
+let _fbPollTimer = null;
+let _fbFilter = 'visible';     // 'visible' = hide auto, 'all', 'warnings'
+let _fbLastSnapshot = null;
+
+function startFbEventsPolling() {
+    stopFbEventsPolling();
+    pollFbEventsOnce();
+    _fbPollTimer = setInterval(pollFbEventsOnce, 2000);
 }
 
+function stopFbEventsPolling() {
+    if (_fbPollTimer) clearInterval(_fbPollTimer);
+    _fbPollTimer = null;
+}
 
+async function pollFbEventsOnce() {
+    if (!window.api || typeof window.api.getFbEvents !== 'function') return;
+    try {
+        const snap = await window.api.getFbEvents();
+        if (snap) {
+            _fbLastSnapshot = snap;
+            renderFbEvents(snap);
+        }
+    } catch (e) { /* silent — never noisy on transient IPC */ }
+}
+
+function setFbFilter(f) {
+    _fbFilter = f;
+    document.querySelectorAll('.fb-filter-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.fbFilter === f);
+    });
+    if (_fbLastSnapshot) renderFbEvents(_fbLastSnapshot);
+}
+
+function copyFbEventsJson() {
+    if (!_fbLastSnapshot) return;
+    try {
+        const json = JSON.stringify(_fbLastSnapshot, null, 2);
+        navigator.clipboard.writeText(json);
+        const btn = document.getElementById('fb-copy-btn');
+        if (btn) {
+            const orig = btn.textContent;
+            btn.textContent = '✓ Copied';
+            setTimeout(() => { btn.textContent = orig; }, 1500);
+        }
+    } catch (_) {}
+}
+
+function fbFormatTime(logcatTime, logcatTimeMs, sessionStartMs) {
+    // Prefer logcat-native time so it matches what testers see in Android Studio
+    if (logcatTime) return logcatTime;
+    if (logcatTimeMs && sessionStartMs) {
+        const sec = Math.max(0, Math.floor((logcatTimeMs - sessionStartMs) / 1000));
+        return `+${sec}s`;
+    }
+    return '—';
+}
+
+function fbParamsPreview(params) {
+    // Compact one-line preview: key=value, key=value...
+    if (!params) return '';
+    const entries = Object.entries(params).filter(([k]) => k !== '_eventName');
+    if (entries.length === 0) return '<em class="fb-empty">no params</em>';
+    return entries.slice(0, 5).map(([k, v]) => {
+        const vs = typeof v === 'object' ? JSON.stringify(v) : String(v);
+        const vTrim = vs.length > 30 ? vs.slice(0, 30) + '…' : vs;
+        return `<span class="fb-kv"><span class="fb-k">${escapeHtml(k)}</span>=<span class="fb-v">${escapeHtml(vTrim)}</span></span>`;
+    }).join(' ') + (entries.length > 5 ? `<span class="fb-more">+${entries.length - 5}</span>` : '');
+}
+
+function renderFbEvents(snap) {
+    const card = document.getElementById('fb-events-card');
+    if (!card) return;
+
+    const status = snap.status || {};
+    const counts = snap.counts || {};
+    const events = snap.events || [];
+
+    // ── Top badges ──────────────────────────────────────────────
+    const setText = (id, t) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = t;
+    };
+    setText('fb-stat-total',    counts.total    || 0);
+    setText('fb-stat-standard', counts.standard || 0);
+    setText('fb-stat-custom',   counts.custom   || 0);
+    setText('fb-stat-auto',     counts.auto     || 0);
+    setText('fb-stat-flushed',  counts.flushed  || 0);
+    setText('fb-stat-warnings', counts.warnings || 0);
+
+    // ── Status row ──────────────────────────────────────────────
+    setText('fb-sdk-version',     status.sdkVersion || '—');
+    setText('fb-format-detected', status.formatDetected === 'unknown' ? '—' : (status.formatDetected || '—'));
+    setText('fb-package-name',    status.packageName || '—');
+
+    const debugEl = document.getElementById('fb-debug-status');
+    const banner  = document.getElementById('fb-events-banner');
+    const bannerTxt = document.getElementById('fb-banner-text');
+    if (debugEl) {
+        if (status.debugLoggingOn === true) {
+            debugEl.textContent = 'ON';
+            debugEl.className = 'fb-status-value fb-status-good';
+        } else if (status.debugLoggingOn === false) {
+            debugEl.textContent = 'OFF';
+            debugEl.className = 'fb-status-value fb-status-bad';
+        } else {
+            debugEl.textContent = 'checking…';
+            debugEl.className = 'fb-status-value';
+        }
+    }
+    if (banner && bannerTxt) {
+        const bannerIcon = banner.querySelector('.fb-banner-icon');
+        // Two distinct conditions can produce a banner. Inactive ranks higher
+        // because the "enable debug logging" message would be wrong advice
+        // when the SDK isn't firing events at all.
+        if (status.sdkInactive === true && status.debugLoggingMessage) {
+            banner.classList.remove('hidden');
+            banner.classList.add('fb-events-banner--info');
+            if (bannerIcon) bannerIcon.textContent = 'ℹ';
+            bannerTxt.textContent = status.debugLoggingMessage;
+        } else if (status.debugLoggingOn === false && status.debugLoggingMessage) {
+            banner.classList.remove('hidden');
+            banner.classList.remove('fb-events-banner--info');
+            if (bannerIcon) bannerIcon.textContent = '⚠';
+            bannerTxt.textContent = status.debugLoggingMessage;
+        } else {
+            banner.classList.add('hidden');
+            banner.classList.remove('fb-events-banner--info');
+        }
+    }
+
+    // ── Filtered events ─────────────────────────────────────────
+    const filtered = (() => {
+        switch (_fbFilter) {
+            case 'all':      return events;
+            case 'warnings': return events.filter(e => (e.warnings || []).length > 0);
+            case 'visible':
+            default:         return events.filter(e => e.type !== 'auto');
+        }
+    })();
+
+    setText('fb-filter-count-visible',  events.filter(e => e.type !== 'auto').length);
+    setText('fb-filter-count-all',      events.length);
+    setText('fb-filter-count-warnings', events.filter(e => (e.warnings || []).length > 0).length);
+
+    const body = document.getElementById('fb-events-body');
+    if (!body) return;
+
+    if (filtered.length === 0) {
+        body.innerHTML = `<div class="fb-events-empty">${
+            events.length === 0
+                ? 'Waiting for Facebook events…'
+                : _fbFilter === 'warnings'
+                    ? 'No events with warnings — looks clean.'
+                    : 'No events match this filter.'
+        }</div>`;
+        return;
+    }
+
+    const sessionStart = status.startedAt || null;
+    body.innerHTML = filtered.slice().reverse().map(e => {
+        const time = fbFormatTime(e.recordedAt, e.recordedAtMs, sessionStart);
+        const typeCls = `fb-type-${e.type || 'custom'}`;
+        const statusCls = e.status === 'flushed' ? 'fb-stat-flushed' : 'fb-stat-recorded';
+        const statusLbl = e.status === 'flushed' ? 'flushed' : 'recorded';
+        const warns = (e.warnings || []);
+        const warnHtml = warns.length === 0
+            ? '<span class="fb-no-warn">—</span>'
+            : warns.map(w => `<span class="fb-warn">⚠ ${escapeHtml(w)}</span>`).join('');
+        const partialBadge = e.partialParse ? '<span class="fb-partial" title="Parser extracted name but params were unreadable">partial</span>' : '';
+        return `<div class="fb-event-row${warns.length ? ' fb-event-row-warn' : ''}">
+            <div class="fb-col-time">${escapeHtml(time)}</div>
+            <div class="fb-col-name">${escapeHtml(e.name)}${partialBadge}</div>
+            <div class="fb-col-type"><span class="fb-type-pill ${typeCls}">${escapeHtml(e.type || 'custom')}</span></div>
+            <div class="fb-col-status"><span class="fb-status-pill ${statusCls}">${statusLbl}</span></div>
+            <div class="fb-col-params">${fbParamsPreview(e.params)}</div>
+            <div class="fb-col-warn">${warnHtml}</div>
+        </div>`;
+    }).join('');
+
+    // ── Parser issues — hidden when empty, shown with line samples otherwise ─
+    const issuesEl = document.getElementById('fb-parser-issues');
+    const issuesCount = document.getElementById('fb-parser-issues-count');
+    const issuesList = document.getElementById('fb-parser-issues-list');
+    const parserIssues = snap.parserIssues || [];
+    if (issuesEl) {
+        if (parserIssues.length === 0) {
+            issuesEl.classList.add('hidden');
+        } else {
+            issuesEl.classList.remove('hidden');
+            if (issuesCount) issuesCount.textContent = parserIssues.length;
+            if (issuesList) {
+                issuesList.innerHTML = parserIssues.slice(-30).reverse().map(it => {
+                    const when = it.at ? new Date(it.at).toLocaleTimeString() : '—';
+                    return `<div class="fb-parser-issue-row">
+                        <div class="fb-parser-issue-time">${escapeHtml(when)}</div>
+                        <div class="fb-parser-issue-reason">${escapeHtml(it.reason || 'no reason')}</div>
+                        <code class="fb-parser-issue-raw">${escapeHtml(it.raw || '')}</code>
+                    </div>`;
+                }).join('');
+            }
+        }
+    }
+}
+
+// Expose so HTML inline handlers can reach them
+window.setFbFilter = setFbFilter;
+window.copyFbEventsJson = copyFbEventsJson;
+window.startFbEventsPolling = startFbEventsPolling;
+window.stopFbEventsPolling = stopFbEventsPolling;
+
+// ─── CHOICE BRANCH TRACKER PANEL ─────────────────────────────────────────────
+// Mirrors the FB events polling pattern: refresh every 2s while session runs,
+// stop on session stop. Designed to no-op cleanly when game doesn't fire
+// recognizable choice events (most non-narrative games) — UI shows zeros +
+// an info banner after 30s of inactivity rather than looking broken.
+
+let _cePollTimer = null;
+let _ceLastSnapshot = null;
+
+function startChoiceEventsPolling() {
+    stopChoiceEventsPolling();
+    pollChoiceEventsOnce();
+    _cePollTimer = setInterval(pollChoiceEventsOnce, 2000);
+}
+function stopChoiceEventsPolling() {
+    if (_cePollTimer) clearInterval(_cePollTimer);
+    _cePollTimer = null;
+}
+async function pollChoiceEventsOnce() {
+    if (!window.api || typeof window.api.getChoiceEvents !== 'function') return;
+    try {
+        const snap = await window.api.getChoiceEvents();
+        if (snap) {
+            _ceLastSnapshot = snap;
+            renderChoiceEvents(snap);
+        }
+    } catch (e) { /* silent */ }
+}
+
+function renderChoiceEvents(snap) {
+    if (!snap) return;
+    const setText = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
+
+    const counts = snap.counts || {};
+    const status = snap.status || {};
+    const events = snap.events || [];
+    const byChapter = snap.byChapter || {};
+
+    setText('ce-stat-total',    counts.total    || 0);
+    setText('ce-stat-unique',   counts.unique   || 0);
+    setText('ce-stat-chapters', counts.chapters || 0);
+    setText('ce-stat-premium',  counts.premium  || 0);
+
+    // Banner: if session has been running 30s+ and no choice events, suggest
+    // this game may not fire recognizable choice events.
+    const banner   = document.getElementById('ce-banner');
+    const bannerTx = document.getElementById('ce-banner-text');
+    if (banner && bannerTx) {
+        const startMs = status.startedAt || 0;
+        const elapsed = startMs > 0 ? (Date.now() - startMs) : 0;
+        if (counts.total === 0 && elapsed > 30000) {
+            banner.classList.remove('hidden');
+            bannerTx.textContent = 'No choice events detected. This game may not fire ' +
+                'standard choice-pattern events (choice_made / decision_made / branch_selected / etc.). ' +
+                'Confirm with the game team that narrative analytics events are being logged.';
+        } else {
+            banner.classList.add('hidden');
+        }
+    }
+
+    // Chapter breakdown
+    const chapterEl = document.getElementById('ce-chapter-grid');
+    if (chapterEl) {
+        const entries = Object.entries(byChapter).sort((a, b) => b[1] - a[1]);
+        if (entries.length === 0) {
+            chapterEl.innerHTML = '<div class="ce-empty">No chapter data yet.</div>';
+        } else {
+            const max = Math.max(...entries.map(e => e[1]));
+            chapterEl.innerHTML = entries.map(([ch, n]) => {
+                const pct = max > 0 ? (n / max * 100) : 0;
+                return '<div class="ce-chapter">' +
+                    '<div class="ce-chapter-name">' + escapeHtml(ch) + '</div>' +
+                    '<div class="ce-chapter-bar"><div class="ce-chapter-bar-fill" style="width:' + pct.toFixed(1) + '%"></div></div>' +
+                    '<div class="ce-chapter-count">' + n + ' choice' + (n === 1 ? '' : 's') + '</div>' +
+                '</div>';
+            }).join('');
+        }
+    }
+
+    // Recent events table
+    const body = document.getElementById('ce-events-body');
+    if (body) {
+        if (events.length === 0) {
+            body.innerHTML = '<div class="ce-empty">No choice events captured yet.</div>';
+        } else {
+            body.innerHTML = events.slice().reverse().slice(0, 80).map(e => {
+                const time = e.recordedAt || '—';
+                const premium = e.isPremium ? '<span class="ce-pill ce-pill-premium">premium</span>' : '';
+                return '<div class="ce-event-row">' +
+                    '<div class="ce-col-time">' + escapeHtml(time) + '</div>' +
+                    '<div class="ce-col-name">' + escapeHtml(e.name || '—') + premium + '</div>' +
+                    '<div class="ce-col-id">' + escapeHtml(e.choiceId || '—') + '</div>' +
+                    '<div class="ce-col-ch">' + escapeHtml(e.chapter || '—') + '</div>' +
+                    '<div class="ce-col-text">' + escapeHtml((e.text || '').slice(0, 60)) + '</div>' +
+                    '<div class="ce-col-src"><span class="ce-pill ce-pill-' + escapeHtml(e.source || 'generic') + '">' + escapeHtml(e.source || 'generic') + '</span></div>' +
+                '</div>';
+            }).join('');
+        }
+    }
+}
+
+window.startChoiceEventsPolling = startChoiceEventsPolling;
+window.stopChoiceEventsPolling  = stopChoiceEventsPolling;
+
+// ─── SAVE STATE MONITOR PANEL ────────────────────────────────────────────────
+// Polls every 5s while session is running (snapshots themselves run every 60s
+// on the backend, so polling more often than that doesn't surface new data).
+
+let _ssPollTimer = null;
+let _ssLastSnapshot = null;
+
+function startSaveStatePolling() {
+    stopSaveStatePolling();
+    pollSaveStateOnce();
+    _ssPollTimer = setInterval(pollSaveStateOnce, 5000);
+}
+function stopSaveStatePolling() {
+    if (_ssPollTimer) clearInterval(_ssPollTimer);
+    _ssPollTimer = null;
+}
+async function pollSaveStateOnce() {
+    if (!window.api || typeof window.api.getSaveState !== 'function') return;
+    try {
+        const snap = await window.api.getSaveState();
+        if (snap) {
+            _ssLastSnapshot = snap;
+            renderSaveState(snap);
+        }
+    } catch (e) { /* silent */ }
+}
+
+function ssBytes(n) {
+    if (n == null) return '—';
+    if (n < 1024) return n + ' B';
+    if (n < 1048576) return (n / 1024).toFixed(1) + ' KB';
+    return (n / 1048576).toFixed(2) + ' MB';
+}
+
+function renderSaveState(snap) {
+    if (!snap) return;
+    const setText = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
+
+    const status  = snap.status || {};
+    const counts  = snap.counts || {};
+    const findings = snap.findings || [];
+    const latest  = snap.latest || [];
+
+    setText('ss-stat-files', counts.trackedFiles || 0);
+    setText('ss-stat-snaps', status.snapshotCount || 0);
+    setText('ss-stat-err',   counts.errors || 0);
+    setText('ss-stat-warn',  counts.warnings || 0);
+
+    // Status row
+    const debugEl = document.getElementById('ss-debuggable');
+    if (debugEl) {
+        if (status.debuggable === true) {
+            debugEl.textContent = 'Yes';
+            debugEl.className = 'ss-status-value ss-status-good';
+        } else if (status.debuggable === false) {
+            debugEl.textContent = 'No';
+            debugEl.className = 'ss-status-value ss-status-bad';
+        } else {
+            debugEl.textContent = 'checking…';
+            debugEl.className = 'ss-status-value';
+        }
+    }
+    setText('ss-package', status.packageName || '—');
+
+    // Banner: only shown when non-debuggable
+    const banner   = document.getElementById('ss-banner');
+    const bannerTx = document.getElementById('ss-banner-text');
+    if (banner && bannerTx) {
+        if (status.debuggable === false && status.discoveryError) {
+            banner.classList.remove('hidden');
+            bannerTx.textContent = status.discoveryError;
+        } else {
+            banner.classList.add('hidden');
+        }
+    }
+
+    // Findings list — group by severity (error first)
+    const findingsEl = document.getElementById('ss-findings');
+    if (findingsEl) {
+        if (findings.length === 0) {
+            findingsEl.innerHTML = '<div class="ss-clean">✓ No corruption or unexpected changes detected.</div>';
+        } else {
+            const order = ['error', 'warn', 'info'];
+            const sorted = findings.slice().sort((a, b) => order.indexOf(a.severity) - order.indexOf(b.severity));
+            findingsEl.innerHTML = sorted.map(f => {
+                const icon = f.severity === 'error' ? '✗' : f.severity === 'warn' ? '⚠' : 'ℹ';
+                const pathBasename = (f.path || '').split('/').pop() || f.path;
+                return '<div class="ss-finding ss-finding-' + escapeHtml(f.severity) + '">' +
+                    '<span class="ss-finding-icon">' + icon + '</span>' +
+                    '<div class="ss-finding-body">' +
+                        '<div class="ss-finding-msg">' + escapeHtml(f.message || f.code) + '</div>' +
+                        '<div class="ss-finding-path"><code>' + escapeHtml(pathBasename) + '</code> · ' + escapeHtml(f.code) + '</div>' +
+                    '</div>' +
+                '</div>';
+            }).join('');
+        }
+    }
+
+    // Tracked files inventory
+    const summaryEl = document.getElementById('ss-files-summary');
+    const listEl    = document.getElementById('ss-files-list');
+    if (summaryEl) summaryEl.textContent = latest.length > 0
+        ? latest.length + ' files tracked'
+        : 'No files tracked yet';
+    if (listEl) {
+        if (latest.length === 0) {
+            listEl.innerHTML = '<div class="ss-empty">App is not debuggable, or no save files exist yet.</div>';
+        } else {
+            listEl.innerHTML = latest.slice(0, 100).map(f => {
+                const parseable = f.parseable === true ? '<span class="ss-parse ss-parse-ok">parses</span>'
+                                : f.parseable === false ? '<span class="ss-parse ss-parse-bad">invalid</span>'
+                                : '';
+                const skipped = f.skipped ? '<span class="ss-skip">' + escapeHtml(f.skipped) + '</span>' : '';
+                return '<div class="ss-file-row">' +
+                    '<code class="ss-file-path">' + escapeHtml(f.path) + '</code>' +
+                    '<span class="ss-file-size">' + ssBytes(f.size) + '</span>' +
+                    parseable + skipped +
+                '</div>';
+            }).join('') + (latest.length > 100 ? '<div class="ss-detail-more">+ ' + (latest.length - 100) + ' more</div>' : '');
+        }
+    }
+}
+
+window.startSaveStatePolling = startSaveStatePolling;
+window.stopSaveStatePolling  = stopSaveStatePolling;
+
+// ─── TEXT OVERFLOW DETECTOR PANEL ────────────────────────────────────────────
+// Polls every 5s while session runs. Backend dumps uiautomator every 15s, so
+// the panel surfaces new findings within a few seconds of each dump.
+
+let _toPollTimer = null;
+let _toLastSnapshot = null;
+
+function startTextOverflowPolling() {
+    stopTextOverflowPolling();
+    pollTextOverflowOnce();
+    _toPollTimer = setInterval(pollTextOverflowOnce, 5000);
+}
+function stopTextOverflowPolling() {
+    if (_toPollTimer) clearInterval(_toPollTimer);
+    _toPollTimer = null;
+}
+async function pollTextOverflowOnce() {
+    if (!window.api || typeof window.api.getTextOverflow !== 'function') return;
+    try {
+        const snap = await window.api.getTextOverflow();
+        if (snap) {
+            _toLastSnapshot = snap;
+            renderTextOverflow(snap);
+        }
+    } catch (e) { /* silent */ }
+}
+
+function toRelativeTime(ms, startedAt) {
+    if (!ms) return '—';
+    if (startedAt && startedAt > 0) {
+        const sec = Math.max(0, Math.floor((ms - startedAt) / 1000));
+        return '+' + sec + 's';
+    }
+    return new Date(ms).toLocaleTimeString();
+}
+
+function renderTextOverflow(snap) {
+    if (!snap) return;
+    const setText = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
+
+    const status = snap.status || {};
+    const counts = snap.counts || {};
+    const findings = snap.findings || [];
+
+    setText('to-stat-dumps', status.dumpsTaken || 0);
+    setText('to-stat-err',   counts.errors || 0);
+    setText('to-stat-warn',  counts.warnings || 0);
+    setText('to-stat-info',  counts.infos || 0);
+
+    // Status row
+    if (status.screen && status.screen.width) {
+        setText('to-screen', status.screen.width + ' × ' + status.screen.height);
+    } else {
+        setText('to-screen', '—');
+    }
+    setText('to-last-dump', toRelativeTime(status.lastDumpAt, status.startedAt));
+    setText('to-package', status.packageName || '—');
+
+    // Banner: only when discovery error
+    const banner   = document.getElementById('to-banner');
+    const bannerTx = document.getElementById('to-banner-text');
+    if (banner && bannerTx) {
+        if (status.discoveryError) {
+            banner.classList.remove('hidden');
+            bannerTx.textContent = status.discoveryError;
+        } else {
+            banner.classList.add('hidden');
+        }
+    }
+
+    // Findings list (severity-sorted)
+    const list = document.getElementById('to-findings');
+    if (list) {
+        if (findings.length === 0) {
+            list.innerHTML = '<div class="to-clean">✓ No text overflow / clipping / missing-string issues detected.</div>';
+        } else {
+            const order = ['error', 'warn', 'info'];
+            const sorted = findings.slice().sort((a, b) => order.indexOf(a.severity) - order.indexOf(b.severity));
+            list.innerHTML = sorted.slice(0, 100).map(f => {
+                const icon = f.severity === 'error' ? '✗' : f.severity === 'warn' ? '⚠' : 'ℹ';
+                const txt = (f.text || '').length > 0 ? '"' + (f.text || '').slice(0, 100) + '"' : '<em class="to-empty-text">(empty)</em>';
+                const cls = f.className ? f.className.split('.').pop() : '';
+                const rid = f.resourceId || '';
+                const bounds = f.bounds ? f.bounds.x1 + ',' + f.bounds.y1 + ' → ' + f.bounds.x2 + ',' + f.bounds.y2 : '';
+                return '<div class="to-finding to-finding-' + escapeHtml(f.severity) + '">' +
+                    '<span class="to-finding-icon">' + icon + '</span>' +
+                    '<div class="to-finding-body">' +
+                        '<div class="to-finding-text">' + (typeof txt === 'string' && txt.startsWith('<em') ? txt : escapeHtml(txt)) + '</div>' +
+                        '<div class="to-finding-msg">' + escapeHtml(f.message || f.code) + '</div>' +
+                        '<div class="to-finding-meta">' +
+                            (rid ? '<span class="to-meta-rid">' + escapeHtml(rid) + '</span>' : '') +
+                            (cls ? '<span class="to-meta-class">' + escapeHtml(cls) + '</span>' : '') +
+                            (bounds ? '<span class="to-meta-bounds">' + escapeHtml(bounds) + '</span>' : '') +
+                            '<span class="to-meta-code">' + escapeHtml(f.code) + '</span>' +
+                        '</div>' +
+                    '</div>' +
+                '</div>';
+            }).join('') + (findings.length > 100 ? '<div class="to-detail-more">+ ' + (findings.length - 100) + ' more</div>' : '');
+        }
+    }
+}
+
+window.startTextOverflowPolling = startTextOverflowPolling;
+window.stopTextOverflowPolling  = stopTextOverflowPolling;
 
 // ─── LOG HELPER ──────────────────────────────────────────────────────────────
 function addLog(message, type = 'system') {

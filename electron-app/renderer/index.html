@@ -52,6 +52,26 @@
                 </div>
             </div>
 
+            <!-- ── Device section (USB + wireless) ───────────────────────── -->
+            <div class="sidebar-section" id="sidebar-devices">
+                <label class="section-label">Device</label>
+                <div id="device-list">
+                    <div class="device-empty">No device. Plug USB or pair wireless.</div>
+                </div>
+                <button id="open-wireless-modal-btn" class="btn-sidebar" title="Connect a device over Wi-Fi">
+                    + Connect Wireless
+                </button>
+            </div>
+
+            <div class="sidebar-section" id="sidebar-session-controls">
+                <label class="section-label">Session</label>
+                <div id="running-controls" class="hidden" style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+                    <span id="session-timer" style="font-family: 'JetBrains Mono', monospace; color: #22C55E; font-weight: 700; font-size: 13px;">00:00</span>
+                    <button id="stop-btn" class="btn danger btn-sm" style="flex: 1;">■ Stop</button>
+                </div>
+                <button id="start-btn" class="btn primary btn-sm" disabled style="width: 100%;">▶ Start Test</button>
+            </div>
+
             <nav class="sidebar-nav">
                 <button class="nav-item active" data-tab="test" id="nav-test">
                     <span class="nav-icon">
@@ -149,14 +169,7 @@
                                 <svg width="12" height="12" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M13.65 2.35A8 8 0 1 0 15 8h-2a6 6 0 1 1-1.05-3.35L10 7h5V2l-1.35.35z" fill="currentColor"/></svg>
                                 Refresh
                             </button>
-                            <div id="running-controls" class="hidden"
-                                style="display: flex; align-items: center; gap: 10px;">
-                                <span id="session-timer"
-                                    style="font-family: 'JetBrains Mono', monospace; color: #22C55E; font-weight: 700; font-size: 13px;">00:00</span>
-                                <button id="stop-btn" class="btn danger btn-sm">■ Stop</button>
-                            </div>
                             <button id="report-btn" class="btn accent btn-sm hidden">📊 Report</button>
-                            <button id="start-btn" class="btn primary btn-sm" disabled>▶ Start Test</button>
                             <button id="main-delete-project-btn" class="btn-xs danger" title="Delete Project" style="padding: 5px 8px;">
                                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
                             </button>
@@ -197,9 +210,10 @@
                             <div class="drop-icon">
                                 <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                             </div>
-                            <p id="drop-text">Drag & Drop APK here</p>
+                            <p id="drop-text">Drag &amp; Drop APK or IPA here</p>
                             <p id="file-name" class="file-name"></p>
-                            <button id="browse-btn" class="btn outline">Browse APK</button>
+                            <button id="browse-btn" class="btn outline">Browse APK / IPA</button>
+                            <p class="drop-hint">Android (.apk) — full test session. iOS (.ipa) — static analysis only (runtime needs macOS, planned for Phase 2).</p>
                         </div>
                     </div>
 
@@ -606,6 +620,129 @@
                             <span style="color: #71717a; font-size: 13px;">Waiting for permission audit...</span>
                         </div>
                     </div>
+
+                    <!-- ── Text Overflow Detector (UI strings) ────────────── -->
+                    <div class="card to-card" id="text-overflow-card" style="padding: 0; margin-top: 24px;">
+                        <div class="to-header">
+                            <div class="to-title">
+                                <span class="to-icon">📝</span>
+                                <span>Text Overflow Detector</span>
+                                <span class="to-tag" title="uiautomator dump-based analysis of every TextView/Button bounds + text">UI-Layer</span>
+                            </div>
+                            <div class="to-badges">
+                                <div class="to-badge" title="Dumps taken this session">
+                                    <span class="to-badge-label">Dumps</span>
+                                    <span class="to-badge-value" id="to-stat-dumps">0</span>
+                                </div>
+                                <div class="to-badge to-badge-err" title="Missing strings / unresolved keys">
+                                    <span class="to-badge-label">Errors</span>
+                                    <span class="to-badge-value" id="to-stat-err">0</span>
+                                </div>
+                                <div class="to-badge to-badge-warn" title="Truncation / clipping warnings">
+                                    <span class="to-badge-label">Warnings</span>
+                                    <span class="to-badge-value" id="to-stat-warn">0</span>
+                                </div>
+                                <div class="to-badge" title="Empty TextViews / squashed text">
+                                    <span class="to-badge-label">Info</span>
+                                    <span class="to-badge-value" id="to-stat-info">0</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Status row -->
+                        <div class="to-status">
+                            <div class="to-status-item">
+                                <span class="to-status-label">Screen</span>
+                                <span class="to-status-value" id="to-screen">—</span>
+                            </div>
+                            <div class="to-status-item">
+                                <span class="to-status-label">Last dump</span>
+                                <span class="to-status-value" id="to-last-dump">—</span>
+                            </div>
+                            <div class="to-status-item to-status-package">
+                                <span class="to-status-label">App</span>
+                                <span class="to-status-value" id="to-package">—</span>
+                            </div>
+                        </div>
+
+                        <!-- Banner when discovery error (uiautomator blocked etc.) -->
+                        <div class="to-banner hidden" id="to-banner">
+                            <span class="to-banner-icon">ℹ</span>
+                            <span id="to-banner-text"></span>
+                        </div>
+
+                        <!-- Findings -->
+                        <div class="to-section">
+                            <div class="to-section-head">Findings</div>
+                            <div class="to-findings" id="to-findings">
+                                <div class="to-empty">No findings yet — start a session.</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ── Save State Monitor (narrative-game focused) ──────── -->
+                    <div class="card ss-card" id="save-state-card" style="padding: 0; margin-top: 24px;">
+                        <div class="ss-header">
+                            <div class="ss-title">
+                                <span class="ss-icon">💾</span>
+                                <span>Save State Monitor</span>
+                                <span class="ss-tag" title="Snapshots app's private files every 60s and diffs them for corruption / data loss">Runtime</span>
+                            </div>
+                            <div class="ss-badges">
+                                <div class="ss-badge" title="Save files tracked in latest snapshot">
+                                    <span class="ss-badge-label">Files</span>
+                                    <span class="ss-badge-value" id="ss-stat-files">0</span>
+                                </div>
+                                <div class="ss-badge" title="Number of snapshots taken this session">
+                                    <span class="ss-badge-label">Snaps</span>
+                                    <span class="ss-badge-value" id="ss-stat-snaps">0</span>
+                                </div>
+                                <div class="ss-badge ss-badge-err" title="Corruption / data loss findings">
+                                    <span class="ss-badge-label">Errors</span>
+                                    <span class="ss-badge-value" id="ss-stat-err">0</span>
+                                </div>
+                                <div class="ss-badge ss-badge-warn" title="Suspicious changes worth reviewing">
+                                    <span class="ss-badge-label">Warnings</span>
+                                    <span class="ss-badge-value" id="ss-stat-warn">0</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Status row: debuggable + package -->
+                        <div class="ss-status">
+                            <div class="ss-status-item">
+                                <span class="ss-status-label">Debuggable</span>
+                                <span class="ss-status-value" id="ss-debuggable">checking…</span>
+                            </div>
+                            <div class="ss-status-item ss-status-package">
+                                <span class="ss-status-label">App</span>
+                                <span class="ss-status-value" id="ss-package">—</span>
+                            </div>
+                        </div>
+
+                        <!-- Banner: shown when non-debuggable -->
+                        <div class="ss-banner hidden" id="ss-banner">
+                            <span class="ss-banner-icon">ℹ</span>
+                            <span id="ss-banner-text"></span>
+                        </div>
+
+                        <!-- Findings list -->
+                        <div class="ss-section">
+                            <div class="ss-section-head">Findings</div>
+                            <div class="ss-findings" id="ss-findings">
+                                <div class="ss-empty">No findings yet — start a session.</div>
+                            </div>
+                        </div>
+
+                        <!-- Tracked files inventory -->
+                        <div class="ss-section">
+                            <div class="ss-section-head">Tracked Files</div>
+                            <details class="ss-details">
+                                <summary class="ss-details-summary" id="ss-files-summary">No files tracked yet</summary>
+                                <div class="ss-files-list" id="ss-files-list"></div>
+                            </details>
+                        </div>
+                    </div>
                 </div>
             </section>
 
@@ -625,6 +762,171 @@
                 </div>
 
                 <div id="events-content" class="hidden">
+                    <!-- ── Choice Branch Tracker (narrative game focus) ─────── -->
+                    <div class="card ce-card" id="choice-events-card" style="padding: 0; margin-bottom: 16px;">
+                        <div class="ce-header">
+                            <div class="ce-title">
+                                <span class="ce-icon">🎭</span>
+                                <span>Choice Branch Coverage</span>
+                                <span class="ce-tag" title="Tracks player choices across analytics SDKs (FB, Firebase, GameAnalytics, AppsFlyer)">Narrative</span>
+                            </div>
+                            <div class="ce-badges">
+                                <div class="ce-badge" title="Total choice events fired this session">
+                                    <span class="ce-badge-label">Choices</span>
+                                    <span class="ce-badge-value" id="ce-stat-total">0</span>
+                                </div>
+                                <div class="ce-badge" title="Distinct choice IDs tested">
+                                    <span class="ce-badge-label">Unique</span>
+                                    <span class="ce-badge-value" id="ce-stat-unique">0</span>
+                                </div>
+                                <div class="ce-badge" title="Chapters / scenes touched">
+                                    <span class="ce-badge-label">Chapters</span>
+                                    <span class="ce-badge-value" id="ce-stat-chapters">0</span>
+                                </div>
+                                <div class="ce-badge ce-badge-premium" title="Premium / paid choices selected">
+                                    <span class="ce-badge-label">Premium</span>
+                                    <span class="ce-badge-value" id="ce-stat-premium">0</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Banner: shown when no choice events detected after 30s -->
+                        <div class="ce-banner hidden" id="ce-banner">
+                            <span class="ce-banner-icon">ℹ</span>
+                            <span id="ce-banner-text"></span>
+                        </div>
+
+                        <!-- Per-chapter breakdown -->
+                        <div class="ce-section">
+                            <div class="ce-section-head">By Chapter</div>
+                            <div class="ce-chapter-grid" id="ce-chapter-grid">
+                                <div class="ce-empty">Waiting for choice events…</div>
+                            </div>
+                        </div>
+
+                        <!-- Recent events table -->
+                        <div class="ce-section">
+                            <div class="ce-section-head">Recent Choices</div>
+                            <div class="ce-table-head">
+                                <div>Time</div>
+                                <div>Event</div>
+                                <div>Choice ID</div>
+                                <div>Chapter</div>
+                                <div>Text</div>
+                                <div>Source</div>
+                            </div>
+                            <div id="ce-events-body" class="ce-events-body">
+                                <div class="ce-empty">No choice events captured yet.</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ── Facebook App Events (dedicated panel) ─────────────── -->
+                    <div class="card fb-events-card" id="fb-events-card" style="padding: 0; margin-bottom: 16px;">
+                        <div class="fb-events-header">
+                            <div class="fb-events-title">
+                                <span class="fb-events-icon">f</span>
+                                <span>Facebook App Events</span>
+                                <span class="fb-events-tag" title="Captured directly from FB SDK logs — Android Studio Logcat format">Logcat-Verified</span>
+                            </div>
+                            <div class="fb-events-badges">
+                                <div class="fb-badge" title="Total events captured this session">
+                                    <span class="fb-badge-label">Total</span>
+                                    <span class="fb-badge-value" id="fb-stat-total">0</span>
+                                </div>
+                                <div class="fb-badge" title="FB standard events (fb_mobile_purchase, etc.)">
+                                    <span class="fb-badge-label">Standard</span>
+                                    <span class="fb-badge-value" id="fb-stat-standard">0</span>
+                                </div>
+                                <div class="fb-badge" title="Custom events your app defines">
+                                    <span class="fb-badge-label">Custom</span>
+                                    <span class="fb-badge-value" id="fb-stat-custom">0</span>
+                                </div>
+                                <div class="fb-badge" title="Auto-logged events from SDK itself (activate_app etc.)">
+                                    <span class="fb-badge-label">Auto</span>
+                                    <span class="fb-badge-value" id="fb-stat-auto">0</span>
+                                </div>
+                                <div class="fb-badge" title="Events flushed to FB server (vs only recorded locally)">
+                                    <span class="fb-badge-label">Flushed</span>
+                                    <span class="fb-badge-value" id="fb-stat-flushed">0</span>
+                                </div>
+                                <div class="fb-badge fb-badge-warn" title="Events with validation warnings (missing required params, reserved keys, etc.)">
+                                    <span class="fb-badge-label">Warnings</span>
+                                    <span class="fb-badge-value" id="fb-stat-warnings">0</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Status row: SDK version, format, debug logging detector -->
+                        <div class="fb-events-status" id="fb-events-status">
+                            <div class="fb-status-item">
+                                <span class="fb-status-label">SDK</span>
+                                <span class="fb-status-value" id="fb-sdk-version">—</span>
+                            </div>
+                            <div class="fb-status-item">
+                                <span class="fb-status-label">Format</span>
+                                <span class="fb-status-value" id="fb-format-detected">—</span>
+                            </div>
+                            <div class="fb-status-item">
+                                <span class="fb-status-label">Debug Log</span>
+                                <span class="fb-status-value" id="fb-debug-status">checking…</span>
+                            </div>
+                            <div class="fb-status-item fb-status-package">
+                                <span class="fb-status-label">App</span>
+                                <span class="fb-status-value" id="fb-package-name">—</span>
+                            </div>
+                        </div>
+
+                        <!-- Debug-off banner (shown only when detected off) -->
+                        <div class="fb-events-banner hidden" id="fb-events-banner">
+                            <span class="fb-banner-icon">⚠</span>
+                            <span id="fb-banner-text"></span>
+                        </div>
+
+                        <!-- Filter toggle -->
+                        <div class="fb-events-filters">
+                            <button class="fb-filter-btn active" data-fb-filter="visible" onclick="setFbFilter('visible')">
+                                App Events
+                                <span class="fb-filter-count" id="fb-filter-count-visible">0</span>
+                            </button>
+                            <button class="fb-filter-btn" data-fb-filter="all" onclick="setFbFilter('all')">
+                                Show Auto-Logged
+                                <span class="fb-filter-count" id="fb-filter-count-all">0</span>
+                            </button>
+                            <button class="fb-filter-btn" data-fb-filter="warnings" onclick="setFbFilter('warnings')">
+                                Warnings Only
+                                <span class="fb-filter-count" id="fb-filter-count-warnings">0</span>
+                            </button>
+                            <div class="fb-filter-spacer"></div>
+                            <button class="fb-filter-btn fb-filter-aux" onclick="copyFbEventsJson()" id="fb-copy-btn" title="Copy all captured events as JSON">📋 Copy JSON</button>
+                        </div>
+
+                        <!-- Header row -->
+                        <div class="fb-events-thead">
+                            <div>Time</div>
+                            <div>Event Name</div>
+                            <div>Type</div>
+                            <div>Status</div>
+                            <div>Parameters</div>
+                            <div>Warnings</div>
+                        </div>
+                        <!-- Event rows -->
+                        <div id="fb-events-body" class="fb-events-body">
+                            <div class="fb-events-empty">Waiting for Facebook events…</div>
+                        </div>
+
+                        <!-- Parser issues (collapsible, hidden when empty) -->
+                        <details class="fb-parser-issues hidden" id="fb-parser-issues">
+                            <summary class="fb-parser-issues-summary" id="fb-parser-issues-summary">
+                                ⚠ Parser issues — <span id="fb-parser-issues-count">0</span> log line(s) looked like FB events but did not parse
+                            </summary>
+                            <div class="fb-parser-issues-body" id="fb-parser-issues-list"></div>
+                            <div class="fb-parser-issues-foot">
+                                If these are valid FB events in a format TestMate doesn't recognize yet, share a sample with the dev team to extend the parser.
+                            </div>
+                        </details>
+                    </div>
+
                     <!-- Stats strip -->
                     <div style="display: grid; grid-template-columns: repeat(6, 1fr); gap: 0; margin-bottom: 20px; background: rgba(0,0,0,0.25); border-radius: 8px; border: 1px solid rgba(255,255,255,0.06); overflow: hidden;">
                         <div style="text-align: center; padding: 14px 10px;">
@@ -675,11 +977,12 @@
 
                     <!-- Event feed -->
                     <div class="card" style="padding: 0; overflow: hidden;">
-                        <div style="display: grid; grid-template-columns: 58px 120px 1fr 1fr; gap: 0; padding: 9px 16px; border-bottom: 1px solid rgba(255,255,255,0.06); background: rgba(0,0,0,0.18);">
+                        <div style="display: grid; grid-template-columns: 58px 120px 1.2fr 1.2fr 2fr; gap: 0; padding: 9px 16px; border-bottom: 1px solid rgba(255,255,255,0.06); background: rgba(0,0,0,0.18);">
                             <div style="font-size: 11px; text-transform: uppercase; color: #52525b; font-weight: 700; letter-spacing: 0.07em;">Time</div>
                             <div style="font-size: 11px; text-transform: uppercase; color: #52525b; font-weight: 700; letter-spacing: 0.07em;">Category</div>
                             <div style="font-size: 11px; text-transform: uppercase; color: #52525b; font-weight: 700; letter-spacing: 0.07em; padding-left: 10px;">Event Name</div>
                             <div style="font-size: 11px; text-transform: uppercase; color: #52525b; font-weight: 700; letter-spacing: 0.07em; padding-left: 10px;">Detail</div>
+                            <div style="font-size: 11px; text-transform: uppercase; color: #52525b; font-weight: 700; letter-spacing: 0.07em; padding-left: 18px;">Logs</div>
                         </div>
                         <div id="events-feed" style="max-height: 620px; overflow-y: auto; overflow-x: hidden;">
                             <div style="padding: 32px; text-align: center; font-size: 12px; color: #52525b; font-family: 'JetBrains Mono', monospace;">Waiting for runtime events…</div>
@@ -1097,6 +1400,64 @@
                             </div>
                         </div>
                     </div>
+
+                    <!-- ── Asset Integrity (narrative-game focused) ─────────── -->
+                    <div class="card ai-card" id="asset-integrity-card" style="margin-top: 24px;">
+                        <div class="ai-header">
+                            <div class="ai-title">
+                                <span class="ai-icon">📦</span>
+                                <span>Asset Integrity</span>
+                                <span class="ai-tag" title="Static scan of bundled assets for stubs, duplicates, localization gaps">Build-side</span>
+                            </div>
+                            <div class="ai-warnings-count" id="ai-warnings-count">—</div>
+                        </div>
+
+                        <!-- KPI strip -->
+                        <div class="ai-kpis">
+                            <div class="ai-kpi" title="Files that are exactly 0 bytes — placeholder stubs never replaced before build">
+                                <div class="ai-kpi-label">Zero-byte</div>
+                                <div class="ai-kpi-value" id="ai-zero-byte">—</div>
+                            </div>
+                            <div class="ai-kpi" title="Audio files under 10KB — likely empty voice/SFX stubs">
+                                <div class="ai-kpi-label">Tiny Audio</div>
+                                <div class="ai-kpi-value" id="ai-tiny-audio">—</div>
+                            </div>
+                            <div class="ai-kpi" title="Files appearing at multiple paths — wasted bundle size">
+                                <div class="ai-kpi-label">Duplicates</div>
+                                <div class="ai-kpi-value" id="ai-dups">—</div>
+                                <div class="ai-kpi-sub" id="ai-dup-waste">— MB wasted</div>
+                            </div>
+                            <div class="ai-kpi" title="Locales found and how complete they are vs the base strings.xml">
+                                <div class="ai-kpi-label">Localization</div>
+                                <div class="ai-kpi-value" id="ai-locales">—</div>
+                                <div class="ai-kpi-sub" id="ai-loc-completeness">—</div>
+                            </div>
+                        </div>
+
+                        <!-- Categories breakdown -->
+                        <div class="ai-section">
+                            <div class="ai-section-head">Asset Categories</div>
+                            <div class="ai-cat-grid" id="ai-cat-grid">
+                                <div class="ai-empty">Analyze an APK to populate.</div>
+                            </div>
+                        </div>
+
+                        <!-- Warnings list -->
+                        <div class="ai-section">
+                            <div class="ai-section-head">Findings</div>
+                            <div class="ai-warn-list" id="ai-warn-list">
+                                <div class="ai-empty">No findings yet.</div>
+                            </div>
+                        </div>
+
+                        <!-- Details expanders -->
+                        <div class="ai-section" id="ai-details-section">
+                            <div class="ai-section-head">Details</div>
+                            <div class="ai-details" id="ai-details">
+                                <div class="ai-empty">Analyze an APK to see zero-byte files, tiny audio, duplicates and localization gaps.</div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </section>
 
@@ -1266,8 +1627,190 @@
         </main>
     </div>
 
+    <!-- ── Wireless Connect modal ─────────────────────────────────────────── -->
+    <div class="wl-modal-overlay hidden" id="wl-modal">
+        <div class="wl-modal">
+            <div class="wl-modal-header">
+                <div class="wl-modal-title">
+                    <span class="wl-modal-icon">📡</span>
+                    Connect Wireless Device
+                </div>
+                <button class="wl-modal-close" onclick="closeWirelessModal()">×</button>
+            </div>
+
+            <div class="wl-modal-tabs">
+                <button class="wl-tab active" data-wl-tab="usb" onclick="selectWirelessTab('usb')">
+                    USB Bootstrap
+                    <span class="wl-tab-sub">All Android versions</span>
+                </button>
+                <button class="wl-tab" data-wl-tab="pair" onclick="selectWirelessTab('pair')">
+                    Pairing Code
+                    <span class="wl-tab-sub">Android 11+</span>
+                </button>
+                <button class="wl-tab" data-wl-tab="help" onclick="selectWirelessTab('help')">
+                    Network Help
+                    <span class="wl-tab-sub">Different networks?</span>
+                </button>
+            </div>
+
+            <!-- USB → TCP/IP tab -->
+            <div class="wl-tab-body" id="wl-tab-usb">
+                <div class="wl-step">
+                    <div class="wl-step-num">1</div>
+                    <div class="wl-step-text">Connect your device with a USB cable. Allow USB debugging if prompted.</div>
+                </div>
+                <div class="wl-step">
+                    <div class="wl-step-num">2</div>
+                    <div class="wl-step-text">
+                        TestMate will detect it, read the Wi-Fi IP, switch the device into wireless mode, and connect.
+                    </div>
+                </div>
+                <div class="wl-step">
+                    <div class="wl-step-num">3</div>
+                    <div class="wl-step-text">After "Connected", unplug the USB cable. Subsequent test sessions will use Wi-Fi automatically.</div>
+                </div>
+
+                <div class="wl-usb-list" id="wl-usb-list">
+                    <div class="wl-empty">Looking for USB devices…</div>
+                </div>
+
+                <div class="wl-result hidden" id="wl-usb-result"></div>
+            </div>
+
+            <!-- Pairing code tab -->
+            <div class="wl-tab-body hidden" id="wl-tab-pair">
+                <div class="wl-step">
+                    <div class="wl-step-num">1</div>
+                    <div class="wl-step-text">
+                        On the device: Settings → Developer Options → <b>Wireless debugging</b>.
+                        Tap <b>"Pair device with pairing code"</b>.
+                    </div>
+                </div>
+                <div class="wl-step">
+                    <div class="wl-step-num">2</div>
+                    <div class="wl-step-text">
+                        Phone shows a pairing IP:port + 6-digit code. Enter them below.
+                        Also note the "IP & Port" shown on the main Wireless debugging screen — that's the
+                        <b>connect</b> port (different from the pair port).
+                    </div>
+                </div>
+
+                <div class="wl-form">
+                    <div class="wl-field">
+                        <label>Pairing IP:Port <span class="wl-hint">(from pairing dialog)</span></label>
+                        <input type="text" id="wl-pair-addr" placeholder="192.168.1.5:42137">
+                    </div>
+                    <div class="wl-field">
+                        <label>Pairing Code <span class="wl-hint">(6 digits)</span></label>
+                        <input type="text" id="wl-pair-code" placeholder="123456" maxlength="6">
+                    </div>
+                    <div class="wl-field">
+                        <label>Connect IP:Port <span class="wl-hint">(from main wireless debugging screen, optional if same)</span></label>
+                        <input type="text" id="wl-connect-addr" placeholder="192.168.1.5:5555">
+                    </div>
+                    <button class="wl-submit" id="wl-pair-submit" onclick="submitWirelessPair()">
+                        Pair & Connect
+                    </button>
+                </div>
+
+                <div class="wl-result hidden" id="wl-pair-result"></div>
+            </div>
+
+            <!-- Network Setup Help tab -->
+            <div class="wl-tab-body hidden" id="wl-tab-help">
+                <div class="wl-help-intro">
+                    Wireless ADB requires PC and phone to be on the <b>same IP-reachable network</b>.
+                    On office networks where IT does not grant Wi-Fi access for phones, the network
+                    type does not matter — only that both devices can see each other. Here are the
+                    realistic options:
+                </div>
+
+                <details class="wl-help-option" open>
+                    <summary class="wl-help-summary">
+                        <span class="wl-help-rank">⭐ Recommended</span>
+                        Windows Mobile Hotspot (free, no extra hardware)
+                    </summary>
+                    <div class="wl-help-body">
+                        <ol>
+                            <li>Press <kbd>Win</kbd>+<kbd>I</kbd> to open Settings</li>
+                            <li>Go to <b>Network &amp; Internet → Mobile Hotspot</b></li>
+                            <li>Set <b>Share over</b> = <b>Wi-Fi</b>, note the Network name + password</li>
+                            <li>Toggle the hotspot <b>ON</b></li>
+                            <li>On the phone, connect to the PC's hotspot Wi-Fi</li>
+                            <li>Come back to TestMate, use <b>USB Bootstrap</b> tab to switch device to Wi-Fi mode</li>
+                        </ol>
+                        <div class="wl-help-note">After setup, the phone auto-connects to the hotspot every time it's on. TestMate auto-reconnects on app start.</div>
+                    </div>
+                </details>
+
+                <details class="wl-help-option">
+                    <summary class="wl-help-summary">
+                        <span class="wl-help-rank">Backup</span>
+                        Phone's Mobile Hotspot (uses phone's cellular data)
+                    </summary>
+                    <div class="wl-help-body">
+                        <ol>
+                            <li>On phone: Settings → Connections / Network → <b>Mobile Hotspot</b> → ON</li>
+                            <li>Note the hotspot name + password</li>
+                            <li>On PC: connect to the phone's hotspot Wi-Fi</li>
+                            <li>Phone uses its own data, PC borrows it</li>
+                            <li>Use <b>USB Bootstrap</b> tab in TestMate</li>
+                        </ol>
+                        <div class="wl-help-note">⚠ Some corporate PCs block connecting to non-corp Wi-Fi via IT policy. Try Windows Hotspot first.</div>
+                    </div>
+                </details>
+
+                <details class="wl-help-option">
+                    <summary class="wl-help-summary">
+                        <span class="wl-help-rank">Hardware</span>
+                        Personal pocket Wi-Fi router (₹2–3K one-time)
+                    </summary>
+                    <div class="wl-help-body">
+                        <ol>
+                            <li>Buy a 4G/5G pocket router from Amazon</li>
+                            <li>Power it on, both PC and phone connect to it</li>
+                            <li>Independent of office Wi-Fi — most reliable for QA labs</li>
+                        </ol>
+                    </div>
+                </details>
+
+                <details class="wl-help-option">
+                    <summary class="wl-help-summary">
+                        <span class="wl-help-rank">Hardware</span>
+                        Secondary USB Wi-Fi dongle on PC (₹400)
+                    </summary>
+                    <div class="wl-help-body">
+                        <ol>
+                            <li>Plug a USB Wi-Fi dongle into PC — adds a secondary Wi-Fi interface</li>
+                            <li>Primary NIC stays on office Wi-Fi (your internet)</li>
+                            <li>Secondary NIC connects to phone's hotspot (your ADB lane)</li>
+                            <li>Use <b>USB Bootstrap</b> tab in TestMate</li>
+                        </ol>
+                        <div class="wl-help-note">Best of both worlds: office internet on primary, isolated test network on secondary.</div>
+                    </div>
+                </details>
+
+                <details class="wl-help-option">
+                    <summary class="wl-help-summary">
+                        <span class="wl-help-rank">Fallback</span>
+                        Just use USB cable (always works)
+                    </summary>
+                    <div class="wl-help-body">
+                        <p>Wireless is a convenience, not a requirement. TestMate works perfectly with a USB-connected device.
+                           In offices with strict IT controls, USB is often the most reliable option.</p>
+                    </div>
+                </details>
+
+                <div class="wl-help-foot">
+                    Reference: <code>project_office_network_constraint</code> memory — common Funcell tester scenario.
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="devicePrediction.js"></script>
     <script src="app.js"></script>
+    <script src="wireless.js"></script>
 </body>
 
 </html>

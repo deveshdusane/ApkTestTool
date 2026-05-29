@@ -77,7 +77,11 @@ ipcMain.handle('select-project', async (event, projectName) => {
 ipcMain.handle('select-file', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
         properties: ['openFile'],
-        filters: [{ name: 'APK Files', extensions: ['apk'] }]
+        filters: [
+            { name: 'App Bundles', extensions: ['apk', 'ipa'] },
+            { name: 'Android APK',  extensions: ['apk'] },
+            { name: 'iOS IPA',      extensions: ['ipa'] }
+        ]
     });
     if (canceled) return null;
     return filePaths[0];
@@ -174,6 +178,50 @@ ipcMain.handle('get-predictions', async () => {
     return agent.getPerformancePredictions();
 });
 
+ipcMain.handle('get-fb-events', async () => {
+    return agent.getFbEvents();
+});
+
+ipcMain.handle('get-choice-events', async () => {
+    return agent.getChoiceEvents();
+});
+
+ipcMain.handle('get-save-state', async () => {
+    return agent.getSaveState();
+});
+
+ipcMain.handle('get-text-overflow', async () => {
+    return agent.getTextOverflow();
+});
+
+// ─── WIRELESS ADB IPC HANDLERS ───────────────────────────────────────────────
+// All routes go through agent/adb/wirelessConnect. Errors are surfaced to the
+// renderer as { success: false, message } so the UI can render a toast/banner
+// without falling into an exception.
+
+const wireless = require(path.join(AGENT_ROOT, 'adb/wirelessConnect'));
+
+function wrap(fn) {
+    return async (...args) => {
+        try {
+            const result = await fn(...args);
+            return { success: true, data: result };
+        } catch (err) {
+            return { success: false, message: err && err.message ? err.message : String(err) };
+        }
+    };
+}
+
+ipcMain.handle('wireless-discover',         wrap(async ()                   => wireless.discoverDevices()));
+ipcMain.handle('wireless-list-known',       wrap(async ()                   => wireless.listKnown()));
+ipcMain.handle('wireless-bootstrap-usb',    wrap(async (_e, { usbSerial })  => wireless.bootstrapFromUsb(usbSerial)));
+ipcMain.handle('wireless-pair-connect',     wrap(async (_e, input)          => wireless.pairAndConnect(input)));
+ipcMain.handle('wireless-reconnect',        wrap(async (_e, { serial })     => wireless.reconnect(serial)));
+ipcMain.handle('wireless-auto-reconnect',   wrap(async ()                   => wireless.autoReconnectLast()));
+ipcMain.handle('wireless-disconnect',       wrap(async (_e, { ip, port })   => wireless.disconnect(ip, port)));
+ipcMain.handle('wireless-forget',           wrap(async (_e, { serial })     => wireless.forgetDevice(serial)));
+ipcMain.handle('wireless-set-last-active',  wrap(async (_e, { serial })     => wireless.setLastActive(serial)));
+
 // ─── IAP VALIDATION IPC HANDLERS ─────────────────────────────────────────────
 
 ipcMain.handle('iap-detect-sdk', async (event, { pkg, deviceId, apkPath }) => {
@@ -204,8 +252,8 @@ ipcMain.handle('get-test-validation', async (_event, { apkPath } = {}) => {
 ipcMain.handle('select-second-apk', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
         properties: ['openFile'],
-        filters: [{ name: 'APK Files', extensions: ['apk'] }],
-        title: 'Select APK to compare'
+        filters: [{ name: 'App Bundles', extensions: ['apk', 'ipa'] }],
+        title: 'Select build to compare'
     });
     if (canceled) return null;
     return filePaths[0];

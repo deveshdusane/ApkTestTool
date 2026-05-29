@@ -125,7 +125,7 @@ const startLogcat = async (sessionId, sessionDir, packageName, deviceId) => {
                 logcatProcess.on('exit', () => logStream.end());
             }
 
-            logcatProcess.stderr.on('data', () => {}); // suppress ADB stderr noise
+            logcatProcess.stderr.on('data', () => { }); // suppress ADB stderr noise
             logcatProcess.on('error', (err) => {
                 console.error('[LogcatManager] Logcat process error:', err);
             });

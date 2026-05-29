@@ -3,6 +3,7 @@ const { exec } = require('child_process');
 const AppInfoParser = require('app-info-parser');
 const securityAnalyzer = require('./securityAnalyzer');
 const sdkIntelligence = require('../advanced/sdkIntelligence');
+const assetIntegrityAnalyzer = require('./assetIntegrityAnalyzer');
 
 const { getToolPath } = require('../utils/toolPaths');
 
@@ -278,6 +279,16 @@ class ApkAnalyzer {
             info.sdkInfo.ads = info.sdkInfo.ads || Object.values(detectedSdks).some(sdk => sdk.category === 'ADS' && sdk.detected);
             info.sdkInfo.firebase = info.sdkInfo.firebase || !!detectedSdks.firebase?.detected || !!detectedSdks.firebase_analytics?.detected;
         } catch (e) {}
+
+        // 7. Asset Integrity — narrative-game-focused checks (0-byte stubs,
+        //    tiny audio placeholders, duplicates, localization gaps). Cheap
+        //    enough to run on every APK so non-narrative builds also benefit
+        //    from the duplicate-asset warning.
+        try {
+            info.assetIntegrity = await assetIntegrityAnalyzer.analyzeAssets(apkPath);
+        } catch (e) {
+            console.error("[StaticAnalyzer] Asset integrity scan failed:", e.message);
+        }
 
         return info;
     }

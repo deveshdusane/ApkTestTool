@@ -290,7 +290,33 @@ const generateReport = (analysis, launchSuccessful, duration, performanceData = 
         // Legacy field — kept for backwards compatibility with old session JSONs that
         // still read testValidation.{automated,manual}. New consumers should read
         // qaReport instead.
-        testValidation: extras.testValidation || null
+        testValidation: extras.testValidation || null,
+
+        // Facebook App Events snapshot captured by fbEventTracker at session end.
+        // Shape comes from fbEventTracker.getReportSummary(); null if FB SDK wasn't
+        // active or the tracker wasn't initialized (e.g., old session replay).
+        fbEvents: extras.fbEvents || null,
+
+        // Choice/branch event snapshot from choiceEventTracker — narrative-game
+        // testing coverage. Null when the game doesn't fire any recognizable
+        // choice-pattern events (most non-narrative games).
+        choiceEvents: extras.choiceEvents || null,
+
+        // Save-state snapshot from saveStateMonitor — file-level diff findings
+        // detected during the session. Null for non-debuggable apps where
+        // run-as wasn't possible (the snapshot itself still has a discoveryError).
+        saveState: extras.saveState || null,
+
+        // Text overflow findings from textOverflowDetector — UI-level
+        // truncation, clipping, and missing-string detection via
+        // `uiautomator dump` parsing.
+        textOverflow: extras.textOverflow || null,
+
+        // Asset integrity scan from assetIntegrityAnalyzer — narrative-game-
+        // focused checks on the APK bundle: 0-byte stubs, tiny audio
+        // placeholders, duplicates, localization gaps. Sourced from
+        // apkInfo.assetIntegrity (populated during analyzeAPK).
+        assetIntegrity: (apkInfo && apkInfo.assetIntegrity) || null
     };
 
     // ── QA Report — the structured, human-readable session verdict ────────
