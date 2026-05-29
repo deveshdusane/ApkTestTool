@@ -18,6 +18,11 @@ electron-app/agent/
 # User Data & Sessions
 sessions/
 projects/
+known-devices.json
+
+# Machine-local / tooling artifacts
+.graphify_python
+.claude/settings.local.json
 
 # Logs
 *.log
