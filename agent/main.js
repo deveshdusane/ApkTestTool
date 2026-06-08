@@ -300,13 +300,6 @@ class QAAgent {
             );
             const logPath = path.join(sessionDir, 'logs.txt');
             const analysis = logAnalyzer.analyzeLogFile(logPath);
-            const uiAnalysis = uiAnalyzer.analyzeUI(sessionDir, analysis);
-            // Snapshot the unified Test Validation result at report-time so the saved
-            // session JSON has automated checks + manual ticks + summary in one block.
-            const testValidationSnapshot = await this.getTestValidation(this.preflightCache.apkPath);
-            // Snapshot the QA Checklist (manual 111-item list) for this project. This
-            // is the new source of truth for the manual portion of the saved report.
-            const qaChecklistSnapshot = qaChecklistManager.exportReport(this.currentProject);
 
             // Snapshot FB events so the saved report includes them; tracker
             // keeps the snapshot until the next session resets it, but we
@@ -319,6 +312,18 @@ class QAAgent {
             try { saveStateSnapshot = saveStateMonitor.getReportSummary(); } catch (_) {}
             let textOverflowSnapshot = null;
             try { textOverflowSnapshot = textOverflowDetector.getReportSummary(); } catch (_) {}
+
+            // UI evaluation is derived from the real text-overflow / view-hierarchy
+            // findings captured during the session (textOverflowSnapshot) — not from
+            // image analysis. Computed after the snapshot so it has real data to use.
+            const uiAnalysis = uiAnalyzer.analyzeUI(sessionDir, analysis, textOverflowSnapshot);
+
+            // Snapshot the unified Test Validation result at report-time so the saved
+            // session JSON has automated checks + manual ticks + summary in one block.
+            const testValidationSnapshot = await this.getTestValidation(this.preflightCache.apkPath);
+            // Snapshot the QA Checklist (manual 111-item list) for this project. This
+            // is the new source of truth for the manual portion of the saved report.
+            const qaChecklistSnapshot = qaChecklistManager.exportReport(this.currentProject);
 
             const reportData = reportGenerator.generateReport(
                 analysis,
