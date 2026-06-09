@@ -20,6 +20,7 @@ let _lastTotalFrames = -1;
 let _lastJankyFrames = -1;
 let _lastFPSCallTime = null;       // timestamp of last gfxinfo read, for time-delta FPS
 let _lastFrameTimestamp = null;   // latest intendedVsync seen, to detect stale framestats
+let _lastFpsSource = 'none';      // which method produced the current FPS: framestats | cumulative | surfaceflinger | none
 
 // EMA smoothing — prevents single noisy readings from dominating the display
 let _emaFPS = null;
@@ -30,6 +31,7 @@ const FPS_HISTORY_SIZE = 8; // ~24 s at 3 s intervals
 
 const telemetry = {
     fps: null,
+    fpsSource: 'none',     // framestats | cumulative | surfaceflinger | none
     jank: 0,
     jankPct: 0,
     frameTime: null,
@@ -182,6 +184,7 @@ async function heavyLoop() {
         }
 
         telemetry.fps = lastFPS;
+        telemetry.fpsSource = fpsData.source || 'none';
         telemetry.jank = fpsData.jank;
         telemetry.jankPct = fpsData.jankPct || 0;
         telemetry.frameTime = (lastFPS != null && lastFPS > 0)
@@ -202,7 +205,7 @@ async function heavyLoop() {
  * 3. SurfaceFlinger      — compositor-reported FPS (Unity/Unreal/native, Android 10+)
  */
 async function getFPSData() {
-    if (!currentDeviceId || !currentPackage) return { fps: lastFPS, jank: 0, jankPct: 0, stability: 1.0 };
+    if (!currentDeviceId || !currentPackage) return { fps: lastFPS, jank: 0, jankPct: 0, stability: 1.0, source: _lastFpsSource };
 
     // ── Method 1: framestats (View-based / hardware-canvas apps) ─────────────
     try {
@@ -244,7 +247,8 @@ async function getFPSData() {
                 const fps = Math.min(120, Math.max(1, Math.round((frames.length - 1) / spanS)));
                 const jankPct = Math.round((jankCount / frames.length) * 100);
                 lastFPS = fps;
-                return { fps, jank: jankCount, jankPct, stability: parseFloat((1 - jankCount / frames.length).toFixed(2)) };
+                _lastFpsSource = 'framestats';
+                return { fps, jank: jankCount, jankPct, stability: parseFloat((1 - jankCount / frames.length).toFixed(2)), source: 'framestats' };
             }
             _lastFrameTimestamp = latestTs;
         }
@@ -272,7 +276,7 @@ async function getFPSData() {
                 _lastTotalFrames = total;
                 _lastJankyFrames = jank;
                 _lastFPSCallTime = now;
-                return { fps: lastFPS, jank: 0, jankPct: 0, stability: 1.0 };
+                return { fps: lastFPS, jank: 0, jankPct: 0, stability: 1.0, source: _lastFpsSource };
             }
             const dTotal = total - _lastTotalFrames;
             const dJank  = jank  - _lastJankyFrames;
@@ -292,7 +296,8 @@ async function getFPSData() {
                     const dropRatio = Math.max(0, Math.min(1, dJank / dTotal));
                     const jankPct = Math.round(dropRatio * 100);
                     lastFPS = fps;
-                    return { fps, jank: dJank, jankPct, stability: parseFloat((1 - dropRatio).toFixed(2)) };
+                    _lastFpsSource = 'cumulative';
+                    return { fps, jank: dJank, jankPct, stability: parseFloat((1 - dropRatio).toFixed(2)), source: 'cumulative' };
                 }
             }
         }
@@ -313,7 +318,8 @@ async function getFPSData() {
                 const fps = Math.min(120, Math.max(1, Math.round(parseFloat(m[1]))));
                 if (fps > 1) {
                     lastFPS = fps;
-                    return { fps, jank: 0, jankPct: telemetry.jankPct || 0, stability: telemetry.stability || 1.0 };
+                    _lastFpsSource = 'surfaceflinger';
+                    return { fps, jank: 0, jankPct: 0, stability: 1.0, source: 'surfaceflinger' };
                 }
             }
         }
@@ -335,12 +341,13 @@ async function getFPSData() {
             if (validFps.length > 0) {
                 const fps = Math.max(...validFps);
                 lastFPS = fps;
-                return { fps, jank: 0, jankPct: telemetry.jankPct || 0, stability: telemetry.stability || 1.0 };
+                _lastFpsSource = 'surfaceflinger';
+                return { fps, jank: 0, jankPct: 0, stability: 1.0, source: 'surfaceflinger' };
             }
         }
     } catch (e) { /* fall through */ }
 
-    return { fps: lastFPS, jank: 0, jankPct: 0, stability: 1.0 };
+    return { fps: lastFPS, jank: 0, jankPct: 0, stability: 1.0, source: _lastFpsSource };
 }
 
 async function getPingSafe() {
@@ -377,6 +384,7 @@ function broadcastData() {
         const runtimeIntelligence = require('../advanced/runtimeIntelligence');
         uiCallback({
             fps: telemetry.fps,
+            fpsSource: telemetry.fpsSource,
             memory: telemetry.memory,
             network: telemetry.status,
             device: currentDeviceId || "Real Android Device",
@@ -388,6 +396,7 @@ function broadcastData() {
                 jank: telemetry.jank,
                 jankPct: telemetry.jankPct,
                 frameTime: telemetry.frameTime,
+                fpsSource: telemetry.fpsSource,
                 cpuUsage: telemetry.avgCPU,
                 stability: telemetry.stability,
                 trend: telemetry.status === 'OFFLINE' ? "DEGRADING" : calculateTrend()

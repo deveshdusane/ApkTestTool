@@ -69,9 +69,74 @@ const PRE_SCREEN_KEYWORDS = [
     'story_', 'narrative_', 'chapter_'
 ];
 
+// ── Hierarchical (GameAnalytics-style) choice IDs ───────────────────────────
+// GameAnalytics, and some custom analytics, log choices as colon/slash/pipe-
+// delimited DESIGN-event IDs rather than discrete underscore names. The choice
+// keyword can be a bare segment OR embedded (with an index/suffix) inside a
+// compound segment. Real examples seen in the wild:
+//   "choice:chapter1:help_wife"      → bare keyword segment
+//   "decision:s1day1:lie"            → bare keyword segment
+//   "day2:choice1_selected1"         → compound: keyword carries index + action
+//   "branch/ch2/flee"                → slash-delimited
+// So we split into segments on true delimiters (: / | >), then split each
+// segment into tokens on _ - . and test the TOKENS for choice keywords. We do
+// NOT split the top level on _ . - because those live inside a segment.
+const CHOICE_SEGMENT_RE = /^(choices?|decisions?|branch(es)?|options?|narrative_?choice|story_?choice|dialogue_?choice)$/i;
+// A single token that means "choice", allowing a trailing index (choice1, decision2).
+const CHOICE_TOKEN_RE   = /^(choices?|decisions?|branch(es)?|options?|playerchoice|narrativechoice|storychoice|dialoguechoice)\d*$/i;
+const CHAPTERISH_RE     = /^(chapter|chap|ch\d|scene|sc\d|episode|ep\d|level|lvl|stage|act\d?|s\d+|d\d+|day\d*)/i;
+
+function splitHierId(name) {
+    if (!name) return [];
+    return String(name).split(/[:/|>]+/).map(s => s.trim()).filter(Boolean);
+}
+
+function segTokens(seg) {
+    return String(seg).split(/[_\-.]+/).filter(Boolean);
+}
+
+// Does this segment contain a choice keyword as one of its tokens?
+function segHasChoiceToken(seg) {
+    return segTokens(seg).some(t => CHOICE_TOKEN_RE.test(t));
+}
+
+function isHierChoiceName(name) {
+    const segs = splitHierId(name);
+    return segs.length >= 2 && segs.some(segHasChoiceToken);
+}
+
+// Pull a choiceId + chapter out of a hierarchical id. Deterministic heuristic:
+//   • locate the segment carrying the choice keyword
+//   • if it's a BARE keyword ("choice"), the id is the last other non-chapter
+//     segment (e.g. "choice:chapter1:help_wife" → help_wife)
+//   • if it's a COMPOUND segment ("choice1_selected1"), that segment IS the id
+//   • chapter = any other segment that looks chapter/day/level-ish
+function parseHierChoice(name) {
+    const segs = splitHierId(name);
+    if (segs.length < 2) return { choiceId: null, chapter: null };
+    const kwIdx = segs.findIndex(segHasChoiceToken);
+    if (kwIdx < 0) return { choiceId: null, chapter: null };
+
+    const kwSeg = segs[kwIdx];
+    const others = segs.filter((_, i) => i !== kwIdx);
+    const chapter = others.find(s => CHAPTERISH_RE.test(s)) || null;
+
+    let choiceId;
+    if (CHOICE_SEGMENT_RE.test(kwSeg)) {
+        // Bare keyword — the real id lives in a sibling segment.
+        const idParts = others.filter(s => s !== chapter);
+        choiceId = (idParts.length ? idParts[idParts.length - 1] : others[others.length - 1]) || null;
+    } else {
+        // Compound segment carries the id itself.
+        choiceId = kwSeg;
+    }
+    return { choiceId, chapter };
+}
+
 function isChoiceEventName(name) {
     if (!name) return false;
-    return CHOICE_EVENT_PATTERNS.some(re => re.test(name));
+    if (CHOICE_EVENT_PATTERNS.some(re => re.test(name))) return true;
+    return isHierChoiceName(name);
 }
 
 function findFirst(params, keys) {
@@ -103,6 +168,9 @@ module.exports = {
     PREMIUM_KEYS,
     PRE_SCREEN_KEYWORDS,
     isChoiceEventName,
+    isHierChoiceName,
+    parseHierChoice,
+    splitHierId,
     findFirst,
     looksLikeChoiceLine
 };

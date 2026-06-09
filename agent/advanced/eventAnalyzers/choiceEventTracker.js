@@ -66,9 +66,18 @@ function createChoiceEventTracker() {
     function reset() { init({ packageName }); }
 
     function recordEvent({ name, params, source, raw, logcatTime, logcatTimeMs, pid }) {
-        const choiceId = patterns.findFirst(params, patterns.CHOICE_ID_KEYS);
-        const chapter  = patterns.findFirst(params, patterns.CHAPTER_KEYS);
-        const text     = patterns.findFirst(params, patterns.TEXT_KEYS);
+        let choiceId = patterns.findFirst(params, patterns.CHOICE_ID_KEYS);
+        let chapter  = patterns.findFirst(params, patterns.CHAPTER_KEYS);
+        const text   = patterns.findFirst(params, patterns.TEXT_KEYS);
+
+        // GameAnalytics-style design events carry the structure in the event ID
+        // (e.g. "choice:chapter1:help_wife"), not in params. When params didn't
+        // yield a choiceId/chapter and the name is hierarchical, derive them.
+        if ((choiceId == null || chapter == null) && patterns.isHierChoiceName(name)) {
+            const hier = patterns.parseHierChoice(name);
+            if (choiceId == null) choiceId = hier.choiceId;
+            if (chapter  == null) chapter  = hier.chapter;
+        }
         const premiumRaw = patterns.findFirst(params, patterns.PREMIUM_KEYS);
         const isPremium = premiumRaw === true || premiumRaw === 'true' || premiumRaw === 1
                        || (typeof premiumRaw === 'string' && /^(true|yes|y|1)$/i.test(premiumRaw))

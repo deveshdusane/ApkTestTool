@@ -1560,9 +1560,18 @@ if (window.api.onLiveData) {
             const fpsNum = parseInt(data.fps);
             if (liveFps) liveFps.textContent = isNaN(fpsNum) ? '--' : fpsNum;
 
+            // FPS source badge — when FPS comes from SurfaceFlinger (compositor),
+            // it's device-refresh, not true game render FPS. Warn the tester.
+            const fpsFromCompositor = data.fpsSource === 'surfaceflinger';
+            const fpsSrcBadge = document.getElementById('live-fps-src');
+            if (fpsSrcBadge) fpsSrcBadge.classList.toggle('hidden', !fpsFromCompositor);
+
             if (!isNaN(fpsNum)) {
-                // Color the big FPS number: smooth ≥55, playable ≥30, choppy <30
-                const fpsColor = fpsNum >= 55 ? '#22C55E' : fpsNum >= 30 ? '#F59E0B' : '#EF4444';
+                // Color the big FPS number: smooth ≥55, playable ≥30, choppy <30.
+                // When the value is compositor-sourced (not game-accurate), grey it
+                // so testers don't read it as a real performance signal.
+                const fpsColor = fpsFromCompositor ? '#9CA3AF'
+                               : fpsNum >= 55 ? '#22C55E' : fpsNum >= 30 ? '#F59E0B' : '#EF4444';
                 if (liveFps) liveFps.style.color = fpsColor;
 
                 // Track min/avg/max for report (hidden elements still updated)

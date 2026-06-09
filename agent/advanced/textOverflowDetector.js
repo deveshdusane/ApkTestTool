@@ -47,15 +47,32 @@ const EDGE_TOLERANCE_PX = 3;             // bounds within this many px of screen
 const MIN_TEXT_HEIGHT_PX = 14;           // smaller than this = likely squashed
 const MAX_FINDINGS_RETAINED = 500;       // cap
 
-// Known placeholder patterns for missing translations
+// Known placeholder patterns for missing translations. Matched against the
+// whole (trimmed) text — these signal the string itself never resolved.
 const MISSING_STRING_PATTERNS = [
     /^\[?(?:STRING|STR|MISSING|TODO|TBD|FIXME)[_:.\s]/i,
     /^@(?:string|str)[\/.]/,
-    /^\$\{[\w.]+\}$/,         // ${chapter.title} unresolved
-    /^%[\w.]+%$/,              // %CHAPTER_TITLE%
     /^MISSING_LOCALIZATION/i,
     /^undefined$/i,
     /^null$/i
+];
+
+// Unresolved interpolation tokens — a templating placeholder that should have
+// been substituted with a real value (player name, count, chapter, etc.) but
+// leaked to the screen verbatim. Unlike MISSING_STRING_PATTERNS these are
+// searched ANYWHERE inside the text, because they usually appear mid-sentence:
+//   "Welcome back, {playerName}!"   "You have {{count}} gems"   "Day %d"
+// Every pattern here is unambiguous on real UI text (curly/dollar braces and
+// printf specifiers effectively never occur in finished copy), so matches are
+// real bugs, not guesses.
+const PLACEHOLDER_TOKEN_PATTERNS = [
+    /\{\{\s*[\w.\-]+\s*\}\}/,        // {{count}} {{ playerName }}  (handlebars / i18n)
+    /\$\{\s*[\w.\-]+\s*\}/,          // ${chapter.title}            (template literal)
+    /\{[A-Za-z_][\w.\-]*\}/,         // {playerName} {chapter}      (single-brace)
+    /\{\d+\}/,                        // {0} {1}                     (MessageFormat)
+    /%\d+\$[@sdfx]/i,                 // %1$s %2$d                   (positional printf)
+    /(?<!\d)%[sdfx@]\b/,              // %s %d %f %@ (NOT 100%/20%)  (printf / iOS)
+    /%[A-Z][A-Z0-9_]{2,}%/            // %CHAPTER_TITLE%             (token markers)
 ];
 
 // Patterns we DON'T treat as missing strings (they look like placeholders but
@@ -185,6 +202,18 @@ function looksLikeMissingString(text) {
     return MISSING_STRING_PATTERNS.some(re => re.test(t));
 }
 
+// Returns the first unresolved interpolation token found in the text (e.g.
+// "{playerName}", "%s", "{{count}}"), or null. Searched anywhere in the string.
+function findPlaceholderLeak(text) {
+    if (!text) return null;
+    const t = String(text);
+    for (const re of PLACEHOLDER_TOKEN_PATTERNS) {
+        const m = t.match(re);
+        if (m) return m[0];
+    }
+    return null;
+}
+
 function analyzeNode(node, screen) {
     const findings = [];
     const text = node.text || '';
@@ -236,6 +265,23 @@ function analyzeNode(node, screen) {
             className: node.class,
             resourceId: node['resource-id'] || null,
             message: 'Text matches a known placeholder pattern — likely a missing string resource or unresolved localization key.'
+        });
+    }
+
+    // 3b. Unresolved interpolation token leaked to the UI (e.g. "{playerName}",
+    // "%s", "{{count}}"). These are template placeholders that should have been
+    // substituted with a real value but rendered verbatim — a visible bug.
+    const leak = findPlaceholderLeak(text);
+    if (leak) {
+        findings.push({
+            code: 'unresolved_placeholder',
+            severity: 'error',
+            text: text.length > 80 ? text.slice(0, 77) + '…' : text,
+            token: leak,
+            bounds: { x1: b.x1, y1: b.y1, x2: b.x2, y2: b.y2 },
+            className: node.class,
+            resourceId: node['resource-id'] || null,
+            message: `Unresolved placeholder "${leak}" rendered on screen — a templating variable (player name, count, etc.) was never substituted.`
         });
     }
 

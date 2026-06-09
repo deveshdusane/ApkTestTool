@@ -21,6 +21,7 @@ const logger = require('../utils/logger');
 // Map textOverflowDetector finding codes → tester-facing UI issue types.
 const CODE_MAP = {
     missing_string_placeholder: { type: 'Missing String / Localization', weight: 15 },
+    unresolved_placeholder:     { type: 'Unresolved Placeholder',        weight: 15 },
     truncated_ellipsis:         { type: 'Text Truncated',                 weight: 8  },
     clipped_at_edge:            { type: 'UI Clipping',                     weight: 8  },
     empty_textview:             { type: 'Empty Text Widget',              weight: 3  },
