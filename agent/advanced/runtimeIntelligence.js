@@ -14,6 +14,52 @@ class RuntimeIntelligence {
         this._eventEngine = new EventEngine();
         this.reset();
         this.lastBytes = 0;
+        // Analytics tracking plan (expected event names). Set via setTrackingPlan,
+        // imported by the tester. Kept OUTSIDE this.data so it survives reset()
+        // between sessions — it's project config, not session state.
+        this._trackingPlan = null;   // { entries: [{event, key}], keys: [...] }
+    }
+
+    // ── Analytics tracking-plan validation ──────────────────────────────────
+    setTrackingPlan(entries) {
+        if (!Array.isArray(entries) || entries.length === 0) { this._trackingPlan = null; return { ok: false, total: 0 }; }
+        const withKey = entries
+            .map(e => (typeof e === 'string' ? { event: e } : { event: e.event || e.name || '' }))
+            .map(e => ({ event: String(e.event || '').trim() }))
+            .filter(e => e.event)
+            .map(e => ({ ...e, key: e.event.toLowerCase() }));
+        if (withKey.length === 0) { this._trackingPlan = null; return { ok: false, total: 0 }; }
+        // de-dup by key
+        const seen = new Set(); const uniq = [];
+        for (const e of withKey) { if (!seen.has(e.key)) { seen.add(e.key); uniq.push(e); } }
+        this._trackingPlan = { entries: uniq };
+        return { ok: true, total: uniq.length };
+    }
+
+    clearTrackingPlan() { this._trackingPlan = null; }
+
+    // Coverage of the plan by event NAMES observed this session. A plan entry
+    // matches an observed name on exact (case-insensitive) OR family-prefix
+    // (observed starts with "<plan>:" or "<plan>_") so a plan entry like
+    // "level_end_time" matches "level_end_time:level_005". Returns null if no
+    // plan is loaded.
+    computeTrackingPlanCoverage() {
+        if (!this._trackingPlan || this._trackingPlan.entries.length === 0) return null;
+        const observed = Array.from(new Set((this.data.events || []).map(e => String(e.name || '').toLowerCase()).filter(Boolean)));
+        const matches = (planKey) => observed.some(o => o === planKey || o.startsWith(planKey + ':') || o.startsWith(planKey + '_'));
+        const fired = []; const missing = [];
+        for (const e of this._trackingPlan.entries) (matches(e.key) ? fired : missing).push(e.event);
+        // observed names matching no plan entry (untracked / undocumented events)
+        const planKeys = this._trackingPlan.entries.map(e => e.key);
+        const extra = observed.filter(o => !planKeys.some(p => o === p || o.startsWith(p + ':') || o.startsWith(p + '_')));
+        const total = this._trackingPlan.entries.length;
+        return {
+            total,
+            fired: fired.length,
+            pct: total > 0 ? Math.round((fired.length / total) * 100) : 0,
+            missing: missing.slice(0, 300),
+            extraCount: extra.length
+        };
     }
 
     reset() {
@@ -1106,6 +1152,8 @@ class RuntimeIntelligence {
 
         return {
             ...this.data,
+            // Analytics tracking-plan coverage — null unless a plan was imported.
+            trackingPlan: this.computeTrackingPlanCoverage(),
             // Maintain old flags for backward compatibility if needed
             adsDetected: this.data.ads.status === 'Detected',
             firebaseDetected: this.data.firebase.status === 'Detected'

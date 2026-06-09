@@ -190,6 +190,44 @@ ipcMain.handle('get-progression', async () => {
     return agent.getProgression();
 });
 
+// Branch-coverage manifest — import a CSV/JSON of all authored choices.
+ipcMain.handle('import-choice-manifest', async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+        properties: ['openFile'],
+        title: 'Import choice manifest (all authored choices)',
+        filters: [
+            { name: 'Choice manifest', extensions: ['csv', 'json'] },
+            { name: 'CSV', extensions: ['csv'] },
+            { name: 'JSON', extensions: ['json'] }
+        ]
+    });
+    if (canceled || !filePaths || !filePaths[0]) return { ok: false, error: 'cancelled' };
+    return agent.importChoiceManifest(filePaths[0]);
+});
+
+ipcMain.handle('clear-choice-manifest', async () => {
+    return agent.clearChoiceManifest();
+});
+
+// Analytics tracking plan — import expected event names (CSV/JSON/TXT).
+ipcMain.handle('import-tracking-plan', async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+        properties: ['openFile'],
+        title: 'Import analytics tracking plan (expected events)',
+        filters: [
+            { name: 'Tracking plan', extensions: ['csv', 'json', 'txt'] },
+            { name: 'JSON', extensions: ['json'] },
+            { name: 'CSV/TXT', extensions: ['csv', 'txt'] }
+        ]
+    });
+    if (canceled || !filePaths || !filePaths[0]) return { ok: false, error: 'cancelled' };
+    return agent.importTrackingPlan(filePaths[0]);
+});
+
+ipcMain.handle('clear-tracking-plan', async () => {
+    return agent.clearTrackingPlan();
+});
+
 ipcMain.handle('get-save-state', async () => {
     return agent.getSaveState();
 });

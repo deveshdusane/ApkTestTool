@@ -51,6 +51,56 @@ function createChoiceEventTracker() {
 
     let eventIdSeq = 0;
 
+    // Branch-coverage manifest — the full set of authored choices, imported by
+    // the tester (CSV/JSON of choiceId [+ chapter]). NOT cleared on init(): it's
+    // project config that persists across sessions. Coverage = observed ∩ manifest.
+    let manifest = null;   // { entries: [{choiceId, chapter, key}], keys: Set }
+
+    // Normalize a (chapter, choiceId) into a comparison key. Chapter-qualified
+    // when a chapter is present (choiceIds repeat across chapters), else id-only.
+    function normKey(chapter, choiceId) {
+        const c  = choiceId != null ? String(choiceId).trim().toLowerCase() : '';
+        const ch = chapter  != null ? String(chapter).trim().toLowerCase()  : '';
+        if (!c && !ch) return null;
+        return ch ? ch + '::' + c : c;
+    }
+
+    function setManifest(entries) {
+        if (!Array.isArray(entries) || entries.length === 0) { manifest = null; return { ok: false, total: 0 }; }
+        const withKey = entries
+            .map(e => ({
+                choiceId: e.choiceId != null ? String(e.choiceId).trim() : '',
+                chapter:  e.chapter  != null && String(e.chapter).trim() !== '' ? String(e.chapter).trim() : null
+            }))
+            .filter(e => e.choiceId)
+            .map(e => ({ ...e, key: normKey(e.chapter, e.choiceId) }))
+            .filter(e => e.key);
+        if (withKey.length === 0) { manifest = null; return { ok: false, total: 0 }; }
+        manifest = { entries: withKey, keys: new Set(withKey.map(e => e.key)) };
+        return { ok: true, total: withKey.length };
+    }
+
+    function clearManifest() { manifest = null; }
+
+    // Coverage of the imported manifest by choices observed this session. Returns
+    // null when no manifest is loaded (feature is opt-in). Deterministic.
+    function getCoverage() {
+        if (!manifest || manifest.keys.size === 0) return null;
+        const observed = new Set();
+        for (const e of events) { const k = normKey(e.chapter, e.choiceId); if (k) observed.add(k); }
+        const untested = manifest.entries.filter(e => !observed.has(e.key));
+        const covered  = manifest.entries.length - untested.length;
+        const unexpected = new Set();
+        for (const k of observed) if (!manifest.keys.has(k)) unexpected.add(k);
+        return {
+            total: manifest.entries.length,
+            covered,
+            pct: manifest.entries.length > 0 ? Math.round((covered / manifest.entries.length) * 100) : 0,
+            untested: untested.slice(0, 500).map(e => ({ choiceId: e.choiceId, chapter: e.chapter })),
+            unexpectedCount: unexpected.size  // observed choices not in the manifest (new content / id drift)
+        };
+    }
+
     function init({ packageName: pkg } = {}) {
         packageName = pkg || null;
         startedAtMs = Date.now();
@@ -287,6 +337,8 @@ function createChoiceEventTracker() {
             events: events.slice(),
             byChapter,
             byChoiceId,
+            coverage: getCoverage(),                 // null unless a manifest is loaded
+            manifestLoaded: !!manifest,
             parserIssues: parserIssues.slice()
         };
     }
@@ -303,6 +355,7 @@ function createChoiceEventTracker() {
             chaptersExercised: Object.keys(byChapter),
             byChapter,
             byChoiceId,
+            coverage: getCoverage(),                 // null unless a manifest is loaded
             // Sample of recent events for the saved report (capped)
             sampleEvents: events.slice(-50).map(e => ({
                 name: e.name,
@@ -316,7 +369,8 @@ function createChoiceEventTracker() {
         };
     }
 
-    return { init, reset, processLine, processLines, getSnapshot, getReportSummary };
+    return { init, reset, processLine, processLines, getSnapshot, getReportSummary,
+             setManifest, clearManifest, getCoverage };
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────

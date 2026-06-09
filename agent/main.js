@@ -73,6 +73,151 @@ class QAAgent {
     setProject(projectName) {
         this.currentProject = projectName;
         logger.logInfo(`Active project set to: ${projectName}`);
+        // Load this project's branch-coverage manifest + analytics tracking plan.
+        this.loadChoiceManifest();
+        this.loadTrackingPlan();
+    }
+
+    // ── Analytics tracking plan (expected event names) ───────────────────────
+    // Parse: JSON ["evt1","evt2"] | [{event}] | {events:[...]}; CSV/TXT one
+    // event name per line, or a column named "event"/"name".
+    parseTrackingPlan(text, ext) {
+        const t = (text || '').trim();
+        if (!t) return [];
+        if (ext === '.json' || t.startsWith('[') || t.startsWith('{')) {
+            try {
+                const data = JSON.parse(t);
+                const arr = Array.isArray(data) ? data : (Array.isArray(data.events) ? data.events : []);
+                return arr.map(x => typeof x === 'string' ? x : (x.event || x.name || '')).map(s => String(s).trim()).filter(Boolean);
+            } catch { return []; }
+        }
+        const lines = t.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+        if (lines.length === 0) return [];
+        // If first line is a header naming the event column, skip it.
+        const first = lines[0].toLowerCase().replace(/[\s_-]/g, '');
+        const hasHeader = ['event', 'eventname', 'name'].includes(first.split(',')[0]);
+        const out = [];
+        for (let i = hasHeader ? 1 : 0; i < lines.length; i++) {
+            const cell = lines[i].split(',')[0].trim();  // first column = event name
+            if (cell) out.push(cell);
+        }
+        return out;
+    }
+
+    trackingPlanPath() {
+        return path.join(projectManager.getProjectPath(this.currentProject), 'tracking-plan.json');
+    }
+
+    importTrackingPlan(filePath) {
+        try {
+            if (!this.currentProject) return { ok: false, error: 'No project selected.' };
+            if (!filePath || !fs.existsSync(filePath)) return { ok: false, error: 'File not found.' };
+            const ext = path.extname(filePath).toLowerCase();
+            const events = this.parseTrackingPlan(fs.readFileSync(filePath, 'utf8'), ext);
+            const res = runtimeIntelligence.setTrackingPlan(events);
+            if (!res.ok) return { ok: false, error: 'No valid event names found in the file.' };
+            fs.writeFileSync(this.trackingPlanPath(), JSON.stringify(events, null, 2));
+            logger.logInfo(`Imported tracking plan: ${res.total} events`);
+            return { ok: true, total: res.total };
+        } catch (e) { return { ok: false, error: e.message }; }
+    }
+
+    loadTrackingPlan() {
+        try {
+            if (!this.currentProject) return;
+            const p = this.trackingPlanPath();
+            if (!fs.existsSync(p)) { runtimeIntelligence.clearTrackingPlan(); return; }
+            runtimeIntelligence.setTrackingPlan(JSON.parse(fs.readFileSync(p, 'utf8')));
+        } catch (_) { /* leave plan unset on parse error */ }
+    }
+
+    clearTrackingPlan() {
+        try {
+            runtimeIntelligence.clearTrackingPlan();
+            if (this.currentProject && fs.existsSync(this.trackingPlanPath())) fs.unlinkSync(this.trackingPlanPath());
+            return { ok: true };
+        } catch (e) { return { ok: false, error: e.message }; }
+    }
+
+    // ── Branch-coverage manifest (full set of authored choices) ──────────────
+    // Parse CSV or JSON. Accepted shapes:
+    //   JSON: ["id1","id2"] | [{choiceId, chapter}] | {choices:[...]}
+    //   CSV : header row with choiceId/chapter columns, or "chapter,choiceId",
+    //         or a single choiceId column.
+    parseChoiceManifest(text, ext) {
+        const t = (text || '').trim();
+        if (!t) return [];
+        if (ext === '.json' || t.startsWith('[') || t.startsWith('{')) {
+            try {
+                const data = JSON.parse(t);
+                const arr = Array.isArray(data) ? data : (Array.isArray(data.choices) ? data.choices : []);
+                return arr.map(x => typeof x === 'string'
+                    ? { choiceId: x, chapter: null }
+                    : { choiceId: x.choiceId ?? x.id ?? x.choice_id ?? '', chapter: x.chapter ?? x.ch ?? x.chapterId ?? null }
+                ).filter(e => e.choiceId);
+            } catch { return []; }
+        }
+        const lines = t.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+        if (lines.length === 0) return [];
+        let start = 0, chapIdx = -1, idIdx = 0;
+        // Header detection by EXACT column names (normalized) — not a loose
+        // substring, so a data row like "day4,choice1_selected2" (which contains
+        // "choice") is NOT mistaken for a header and dropped.
+        const norm = s => s.toLowerCase().replace(/[\s_-]/g, '');
+        const ID_NAMES   = ['choiceid', 'choice', 'id', 'choicekey', 'branch', 'branchid', 'optionid'];
+        const CHAP_NAMES = ['chapter', 'chapterid', 'scene', 'sceneid', 'day', 'level', 'episode'];
+        const cols0 = lines[0].split(',').map(c => norm(c.trim()));
+        const isHeader = cols0.some(c => ID_NAMES.includes(c) || CHAP_NAMES.includes(c));
+        if (isHeader) {
+            idIdx = cols0.findIndex(c => ID_NAMES.includes(c)); if (idIdx < 0) idIdx = 0;
+            chapIdx = cols0.findIndex(c => CHAP_NAMES.includes(c));
+            start = 1;
+        } else if (lines[0].includes(',')) {
+            chapIdx = 0; idIdx = 1; // headerless 2-col → assume "chapter,choiceId"
+        }
+        const entries = [];
+        for (let i = start; i < lines.length; i++) {
+            const cols = lines[i].split(',').map(c => c.trim());
+            const choiceId = cols[idIdx] || '';
+            const chapter = chapIdx >= 0 ? (cols[chapIdx] || null) : null;
+            if (choiceId) entries.push({ choiceId, chapter });
+        }
+        return entries;
+    }
+
+    manifestPath() {
+        return path.join(projectManager.getProjectPath(this.currentProject), 'choice-manifest.json');
+    }
+
+    importChoiceManifest(filePath) {
+        try {
+            if (!this.currentProject) return { ok: false, error: 'No project selected.' };
+            if (!filePath || !fs.existsSync(filePath)) return { ok: false, error: 'File not found.' };
+            const ext = path.extname(filePath).toLowerCase();
+            const entries = this.parseChoiceManifest(fs.readFileSync(filePath, 'utf8'), ext);
+            const res = choiceEventTracker.setManifest(entries);
+            if (!res.ok) return { ok: false, error: 'No valid choice entries found in the file.' };
+            fs.writeFileSync(this.manifestPath(), JSON.stringify(entries, null, 2));
+            logger.logInfo(`Imported choice manifest: ${res.total} entries`);
+            return { ok: true, total: res.total };
+        } catch (e) { return { ok: false, error: e.message }; }
+    }
+
+    loadChoiceManifest() {
+        try {
+            if (!this.currentProject) return;
+            const p = this.manifestPath();
+            if (!fs.existsSync(p)) { choiceEventTracker.clearManifest(); return; }
+            choiceEventTracker.setManifest(JSON.parse(fs.readFileSync(p, 'utf8')));
+        } catch (_) { /* leave manifest unset on parse error */ }
+    }
+
+    clearChoiceManifest() {
+        try {
+            choiceEventTracker.clearManifest();
+            if (this.currentProject && fs.existsSync(this.manifestPath())) fs.unlinkSync(this.manifestPath());
+            return { ok: true };
+        } catch (e) { return { ok: false, error: e.message }; }
     }
 
     async startSession(apkPath, onLiveData = null) {

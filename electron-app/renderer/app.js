@@ -1693,6 +1693,54 @@ if (window.api.onLiveData) {
 /**
  * Renders the Runtime Intelligence tab from persistent state.
  */
+function renderTrackingPlan(tp) {
+    const setText = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
+    const wrap = document.getElementById('tp-coverage');
+    const clearBtn = document.getElementById('tp-clear-btn');
+
+    if (wrap) {
+        if (tp) {
+            wrap.classList.remove('hidden');
+            setText('tp-pct', tp.pct + '%');
+            setText('tp-frac', tp.fired + ' / ' + tp.total + ' expected events fired');
+            const fill = document.getElementById('tp-fill');
+            if (fill) {
+                fill.style.width = tp.pct + '%';
+                fill.style.background = tp.pct >= 90 ? '#22c55e' : tp.pct >= 50 ? '#facc15' : '#f97316';
+            }
+            const missEl = document.getElementById('tp-missing');
+            if (missEl) {
+                missEl.innerHTML = (tp.missing && tp.missing.length)
+                    ? '<strong>Never fired (' + tp.missing.length + '):</strong> ' +
+                      tp.missing.slice(0, 40).map(escapeHtml).join(', ') + (tp.missing.length > 40 ? ' …' : '')
+                    : '<span style="color:#4ade80;">All expected events fired 🎉</span>';
+            }
+            setText('tp-extra', tp.extraCount > 0 ? (tp.extraCount + ' observed event(s) not in the plan (undocumented)') : '');
+        } else {
+            wrap.classList.add('hidden');
+        }
+    }
+    if (clearBtn) clearBtn.classList.toggle('hidden', !tp);
+
+    // Wire import/clear buttons once.
+    const importBtn = document.getElementById('tp-import-btn');
+    if (importBtn && !importBtn._bound) {
+        importBtn._bound = true;
+        importBtn.addEventListener('click', async () => {
+            if (!window.api || !window.api.importTrackingPlan) return;
+            const r = await window.api.importTrackingPlan();
+            if (r && r.error && r.error !== 'cancelled') alert('Tracking plan import failed: ' + r.error);
+            // coverage refreshes on the next runtime poll
+        });
+    }
+    if (clearBtn && !clearBtn._bound) {
+        clearBtn._bound = true;
+        clearBtn.addEventListener('click', async () => {
+            if (window.api && window.api.clearTrackingPlan) await window.api.clearTrackingPlan();
+        });
+    }
+}
+
 function renderRuntimeTab(runtime) {
     if (!runtime) {
         runtimeContent.classList.add('hidden');
@@ -1705,6 +1753,8 @@ function renderRuntimeTab(runtime) {
 
     runtimeEngine.textContent = runtime.engine || 'Native';
     runtimeNetwork.textContent = runtime.networkCalls || 0;
+
+    renderTrackingPlan(runtime.trackingPlan);
 
 
 
@@ -2354,6 +2404,55 @@ function renderChoiceEvents(snap) {
     setText('ce-stat-unique',   counts.unique   || 0);
     setText('ce-stat-chapters', counts.chapters || 0);
     setText('ce-stat-premium',  counts.premium  || 0);
+
+    // ── Branch-coverage (only when a manifest is imported) ───────────────────
+    const cov = snap.coverage;
+    const covWrap = document.getElementById('ce-coverage');
+    if (covWrap) {
+        if (cov) {
+            covWrap.classList.remove('hidden');
+            setText('ce-cov-pct', cov.pct + '%');
+            setText('ce-cov-frac', cov.covered + ' / ' + cov.total + ' authored choices hit');
+            const fill = document.getElementById('ce-cov-fill');
+            if (fill) {
+                fill.style.width = cov.pct + '%';
+                fill.style.background = cov.pct >= 90 ? '#22c55e' : cov.pct >= 50 ? '#facc15' : '#f97316';
+            }
+            const untestedEl = document.getElementById('ce-cov-untested');
+            if (untestedEl) {
+                untestedEl.innerHTML = cov.untested.length === 0
+                    ? '<span style="color:#4ade80;">All authored choices were exercised 🎉</span>'
+                    : '<strong>Untested (' + cov.untested.length + '):</strong> ' +
+                      cov.untested.slice(0, 40).map(u => escapeHtml((u.chapter ? u.chapter + ':' : '') + u.choiceId)).join(', ') +
+                      (cov.untested.length > 40 ? ' …' : '');
+            }
+            setText('ce-cov-unexpected', cov.unexpectedCount > 0
+                ? (cov.unexpectedCount + ' observed choice(s) not in the manifest (new content or id drift)')
+                : '');
+        } else {
+            covWrap.classList.add('hidden');
+        }
+    }
+
+    // Wire the import / clear buttons once.
+    const importBtn = document.getElementById('ce-import-btn');
+    if (importBtn && !importBtn._bound) {
+        importBtn._bound = true;
+        importBtn.addEventListener('click', async () => {
+            if (!window.api || !window.api.importChoiceManifest) return;
+            const r = await window.api.importChoiceManifest();
+            if (r && r.ok) { pollChoiceEventsOnce(); }
+            else if (r && r.error && r.error !== 'cancelled') { alert('Manifest import failed: ' + r.error); }
+        });
+    }
+    const clearManifestBtn = document.getElementById('ce-clear-manifest');
+    if (clearManifestBtn && !clearManifestBtn._bound) {
+        clearManifestBtn._bound = true;
+        clearManifestBtn.addEventListener('click', async () => {
+            if (window.api && window.api.clearChoiceManifest) { await window.api.clearChoiceManifest(); pollChoiceEventsOnce(); }
+        });
+    }
+    if (clearManifestBtn) clearManifestBtn.classList.toggle('hidden', !snap.manifestLoaded);
 
     // Banner: if session has been running 30s+ and no choice events, suggest
     // this game may not fire recognizable choice events.

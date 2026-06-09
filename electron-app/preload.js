@@ -35,6 +35,12 @@ contextBridge.exposeInMainWorld('api', {
     getChoiceEvents:  ()              => ipcRenderer.invoke('get-choice-events'),
     // Chapter/level progression live snapshot
     getProgression:   ()              => ipcRenderer.invoke('get-progression'),
+    // Branch-coverage manifest (all authored choices)
+    importChoiceManifest: ()          => ipcRenderer.invoke('import-choice-manifest'),
+    clearChoiceManifest:  ()          => ipcRenderer.invoke('clear-choice-manifest'),
+    // Analytics tracking plan (expected events)
+    importTrackingPlan:   ()          => ipcRenderer.invoke('import-tracking-plan'),
+    clearTrackingPlan:    ()          => ipcRenderer.invoke('clear-tracking-plan'),
 
     // Save-state monitor live snapshot
     getSaveState:     ()              => ipcRenderer.invoke('get-save-state'),
