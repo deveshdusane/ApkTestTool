@@ -11,6 +11,7 @@ const iapValidationEngine = require('./advanced/iapValidationEngine');
 const gameplayBlockerDetector = require('./advanced/gameplayBlockerDetector');
 const { fbEventTracker } = require('./advanced/eventAnalyzers/fbEventTracker');
 const { choiceEventTracker } = require('./advanced/eventAnalyzers/choiceEventTracker');
+const { progressionTracker } = require('./advanced/eventAnalyzers/progressionTracker');
 
 let logcatInterval = null;
 let monitorInterval = null;
@@ -142,6 +143,7 @@ const start = async (packageName, onData, logPath, deviceId = null) => {
         try { if (memoryAnalyzer) memoryAnalyzer.reset(); } catch (e) { }
         try { fbEventTracker.init({ packageName }); } catch (e) { }
         try { choiceEventTracker.init({ packageName }); } catch (e) { }
+        try { progressionTracker.init({ packageName }); } catch (e) { }
         try {
             if (runtimeIntelligence) {
                 runtimeIntelligence.reset();
@@ -226,6 +228,7 @@ const fetchAndSend = async (deviceId, pkg, onData) => {
                     }
                     try { fbEventTracker.processLines(lines); } catch (e) { /* never let parser kill the monitor */ }
                     try { choiceEventTracker.processLines(lines); } catch (e) { /* never let parser kill the monitor */ }
+                    try { progressionTracker.processLines(lines); } catch (e) { /* never let parser kill the monitor */ }
                 }
             }
         } catch (err) { }

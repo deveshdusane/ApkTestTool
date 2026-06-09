@@ -822,6 +822,39 @@
                         </div>
                     </div>
 
+                    <!-- ── Chapter / Level Progression ──────────────────────── -->
+                    <div class="card ce-card" id="progression-card" style="padding: 0; margin-bottom: 16px;">
+                        <div class="ce-header">
+                            <div class="ce-title">
+                                <span class="ce-icon">🗺️</span>
+                                <span>Chapter / Level Progression</span>
+                                <span class="ce-tag" title="Observed start &amp; completion markers from GameAnalytics design events. Conservative matching — ad/cooldown events are excluded.">Coverage</span>
+                            </div>
+                            <div class="ce-badges">
+                                <div class="ce-badge" title="Chapter/level START events observed">
+                                    <span class="ce-badge-label">Starts</span>
+                                    <span class="ce-badge-value" id="pg-stat-starts">0</span>
+                                </div>
+                                <div class="ce-badge" title="Chapter/level COMPLETE events observed">
+                                    <span class="ce-badge-label">Completes</span>
+                                    <span class="ce-badge-value" id="pg-stat-completes">0</span>
+                                </div>
+                                <div class="ce-badge ce-badge-premium" title="Started but no completion observed">
+                                    <span class="ce-badge-label">Incomplete</span>
+                                    <span class="ce-badge-value" id="pg-stat-incomplete">0</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="ce-section">
+                            <div class="ce-section-head">Units Reached</div>
+                            <div id="pg-grid" class="ce-events-body">
+                                <div class="ce-empty">No chapter/level progression events observed yet.</div>
+                            </div>
+                            <div id="pg-note" class="ce-note" style="padding: 8px 12px; color: #a1a1aa; font-size: 12px;"></div>
+                        </div>
+                    </div>
+
                     <!-- ── Facebook App Events (dedicated panel) ─────────────── -->
                     <div class="card fb-events-card" id="fb-events-card" style="padding: 0; margin-bottom: 16px;">
                         <div class="fb-events-header">

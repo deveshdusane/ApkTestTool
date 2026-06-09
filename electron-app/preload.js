@@ -33,6 +33,8 @@ contextBridge.exposeInMainWorld('api', {
 
     // Narrative-game choice events live snapshot
     getChoiceEvents:  ()              => ipcRenderer.invoke('get-choice-events'),
+    // Chapter/level progression live snapshot
+    getProgression:   ()              => ipcRenderer.invoke('get-progression'),
 
     // Save-state monitor live snapshot
     getSaveState:     ()              => ipcRenderer.invoke('get-save-state'),

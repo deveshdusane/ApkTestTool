@@ -302,6 +302,11 @@ const generateReport = (analysis, launchSuccessful, duration, performanceData = 
         // choice-pattern events (most non-narrative games).
         choiceEvents: extras.choiceEvents || null,
 
+        // Chapter/level progression snapshot from progressionTracker — observed
+        // start & completion markers (GameAnalytics design events). Null when no
+        // recognizable progression events fired.
+        progression: extras.progression || null,
+
         // Save-state snapshot from saveStateMonitor — file-level diff findings
         // detected during the session. Null for non-debuggable apps where
         // run-as wasn't possible (the snapshot itself still has a discoveryError).

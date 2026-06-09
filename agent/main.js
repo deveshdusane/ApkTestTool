@@ -27,6 +27,7 @@ const qaChecklistManager = require('./manager/qaChecklistManager');
 const scrcpyManager = require('./cast/scrcpyManager');
 const { fbEventTracker } = require('./advanced/eventAnalyzers/fbEventTracker');
 const { choiceEventTracker } = require('./advanced/eventAnalyzers/choiceEventTracker');
+const { progressionTracker } = require('./advanced/eventAnalyzers/progressionTracker');
 const saveStateMonitor = require('./advanced/saveStateMonitor');
 const textOverflowDetector = require('./advanced/textOverflowDetector');
 const platformDispatch = require('./platformDispatch');
@@ -312,6 +313,8 @@ class QAAgent {
             try { saveStateSnapshot = saveStateMonitor.getReportSummary(); } catch (_) {}
             let textOverflowSnapshot = null;
             try { textOverflowSnapshot = textOverflowDetector.getReportSummary(); } catch (_) {}
+            let progressionSnapshot = null;
+            try { progressionSnapshot = progressionTracker.getReportSummary(); } catch (_) {}
 
             // UI evaluation is derived from the real text-overflow / view-hierarchy
             // findings captured during the session (textOverflowSnapshot) — not from
@@ -333,7 +336,7 @@ class QAAgent {
                 uiAnalysis,
                 this.advancedAuditData,
                 this.currentApkInfo,
-                { testValidation: testValidationSnapshot, qaChecklistSnapshot, fbEvents: fbEventsSnapshot, choiceEvents: choiceEventsSnapshot, saveState: saveStateSnapshot, textOverflow: textOverflowSnapshot }
+                { testValidation: testValidationSnapshot, qaChecklistSnapshot, fbEvents: fbEventsSnapshot, choiceEvents: choiceEventsSnapshot, saveState: saveStateSnapshot, textOverflow: textOverflowSnapshot, progression: progressionSnapshot }
             );
 
             const memorySamples = this.performanceData?.memory || [];
@@ -419,6 +422,19 @@ class QAAgent {
             return choiceEventTracker.getSnapshot();
         } catch (err) {
             logger.logError(`getChoiceEvents error: ${err.message}`);
+            return null;
+        }
+    }
+
+    /**
+     * Live snapshot of chapter/level progression (starts & completes) observed
+     * during the session. Same contract as getChoiceEvents.
+     */
+    getProgression() {
+        try {
+            return progressionTracker.getSnapshot();
+        } catch (err) {
+            logger.logError(`getProgression error: ${err.message}`);
             return null;
         }
     }

@@ -214,11 +214,21 @@ function findPlaceholderLeak(text) {
     return null;
 }
 
+// resource-ids that denote non-text controls (icons, nav, progress, media).
+// Used to suppress "empty text widget" noise on WebView/Unity overlays where
+// these are legitimately textless.
+const NON_TEXT_CONTROL_RE = /progress|(^|[_-])bar([_-]|$)|icon|img|image|next|prev|previous|back|close|arrow|spinner|loader|slider|toggle|switch|checkbox|thumb|seek|play|pause|volume|mute/i;
+
 function analyzeNode(node, screen) {
     const findings = [];
     const text = node.text || '';
     const b = node._bounds;
     if (!b) return findings;
+
+    // Skip degenerate (zero/near-zero size) nodes. Hidden web/Unity container
+    // elements often report 0×0 or 1px bounds — they have no visible text to
+    // mis-render, so any clipped/empty finding on them is noise, not a bug.
+    if (b.width <= 1 || b.height <= 1) return findings;
 
     // 1. Truncated with ellipsis
     if (/(?:…|\.{3,})$/.test(text)) {
@@ -287,9 +297,13 @@ function analyzeNode(node, screen) {
 
     // 4. Empty TextView with size — possible missing translation
     // Heuristic: a TextView with non-trivial bounds (>40px wide, >10px tall)
-    // but empty text and no content-desc is suspicious.
+    // but empty text and no content-desc is suspicious. Skip elements whose
+    // resource-id marks them as non-text controls (progress bars, icon/nav
+    // buttons, media controls) — those are legitimately textless.
+    const rid = String(node['resource-id'] || '');
     if (text === '' && b.width > 40 && b.height > 10 &&
-        !(node['content-desc'] || '').trim()) {
+        !(node['content-desc'] || '').trim() &&
+        !NON_TEXT_CONTROL_RE.test(rid)) {
         // Don't flag every empty container — must be a TextView/Button class
         if (/TextView|Button|EditText/i.test(String(node.class || ''))) {
             findings.push({

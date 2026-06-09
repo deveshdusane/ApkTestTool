@@ -816,6 +816,7 @@ function updateSessionState(newState) {
         startTimer();
         if (typeof startFbEventsPolling === 'function') startFbEventsPolling();
         if (typeof startChoiceEventsPolling === 'function') startChoiceEventsPolling();
+        if (typeof startProgressionPolling === 'function') startProgressionPolling();
         if (typeof startSaveStatePolling === 'function') startSaveStatePolling();
         if (typeof startTextOverflowPolling === 'function') startTextOverflowPolling();
     } else if (sessionState === 'stopped') {
@@ -830,6 +831,8 @@ function updateSessionState(newState) {
         if (typeof stopFbEventsPolling === 'function') stopFbEventsPolling();
         if (typeof pollChoiceEventsOnce === 'function') pollChoiceEventsOnce();
         if (typeof stopChoiceEventsPolling === 'function') stopChoiceEventsPolling();
+        if (typeof pollProgressionOnce === 'function') pollProgressionOnce();
+        if (typeof stopProgressionPolling === 'function') stopProgressionPolling();
         if (typeof pollSaveStateOnce === 'function') pollSaveStateOnce();
         if (typeof stopSaveStatePolling === 'function') stopSaveStatePolling();
         if (typeof pollTextOverflowOnce === 'function') pollTextOverflowOnce();
@@ -2412,6 +2415,71 @@ function renderChoiceEvents(snap) {
 
 window.startChoiceEventsPolling = startChoiceEventsPolling;
 window.stopChoiceEventsPolling  = stopChoiceEventsPolling;
+
+// ─── PROGRESSION (chapter/level starts & completes) ─────────────────────────
+let _progPollTimer = null;
+
+function startProgressionPolling() {
+    stopProgressionPolling();
+    pollProgressionOnce();
+    _progPollTimer = setInterval(pollProgressionOnce, 2000);
+}
+function stopProgressionPolling() {
+    if (_progPollTimer) clearInterval(_progPollTimer);
+    _progPollTimer = null;
+}
+async function pollProgressionOnce() {
+    if (!window.api || typeof window.api.getProgression !== 'function') return;
+    try {
+        const snap = await window.api.getProgression();
+        if (snap) renderProgression(snap);
+    } catch (e) { /* silent */ }
+}
+
+function renderProgression(snap) {
+    if (!snap) return;
+    const setText = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
+    const counts = snap.counts || {};
+    const started = snap.started || {};
+    const completed = snap.completed || {};
+    const incomplete = snap.incomplete || [];
+
+    setText('pg-stat-starts',     counts.starts     || 0);
+    setText('pg-stat-completes',  counts.completes  || 0);
+    setText('pg-stat-incomplete', counts.incomplete || 0);
+
+    const grid = document.getElementById('pg-grid');
+    if (grid) {
+        const units = Array.from(new Set([...Object.keys(started), ...Object.keys(completed)]));
+        if (units.length === 0) {
+            grid.innerHTML = '<div class="ce-empty">No chapter/level progression events observed yet.</div>';
+        } else {
+            grid.innerHTML = units.map(u => {
+                const isDone = u in completed;
+                const tag = isDone
+                    ? '<span class="ce-pill ce-pill-gameanalytics">completed</span>'
+                    : '<span class="ce-pill ce-pill-premium">started · not completed</span>';
+                return '<div class="ce-event-row">' +
+                    '<div class="ce-col-id">' + escapeHtml(u) + '</div>' +
+                    '<div class="ce-col-ch">started ×' + (started[u] || 0) + '</div>' +
+                    '<div class="ce-col-text">' + (isDone ? ('completed ×' + completed[u]) : '—') + '</div>' +
+                    '<div class="ce-col-src">' + tag + '</div>' +
+                '</div>';
+            }).join('');
+        }
+    }
+
+    const note = document.getElementById('pg-note');
+    if (note) {
+        note.textContent = incomplete.length > 0
+            ? ('Started but no completion observed: ' + incomplete.join(', ') +
+               '  (may be normal if the run did not finish these, or completions use a different event id).')
+            : '';
+    }
+}
+
+window.startProgressionPolling = startProgressionPolling;
+window.stopProgressionPolling  = stopProgressionPolling;
 
 // ─── SAVE STATE MONITOR PANEL ────────────────────────────────────────────────
 // Polls every 5s while session is running (snapshots themselves run every 60s

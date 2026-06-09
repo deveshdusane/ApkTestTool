@@ -186,6 +186,10 @@ ipcMain.handle('get-choice-events', async () => {
     return agent.getChoiceEvents();
 });
 
+ipcMain.handle('get-progression', async () => {
+    return agent.getProgression();
+});
+
 ipcMain.handle('get-save-state', async () => {
     return agent.getSaveState();
 });
