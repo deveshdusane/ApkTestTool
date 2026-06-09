@@ -53,12 +53,16 @@ class PerformanceScaler {
         // Cap at device max refresh rate
         const maxFPS = targetDeviceProfile.refreshRate || tgtDefaults.maxFPS;
         predictedFPS = Math.min(predictedFPS, maxFPS);
+        predictedFPS = Math.max(1, Math.round(predictedFPS));
 
-        // Deterministic variance — small per-device offset, never random
-        const nameHash = targetDeviceProfile.name
-            .split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
-        const variance = ((nameHash % 50) / 50) * 4 - 2; // ±2 FPS
-        predictedFPS = Math.max(1, Math.round(predictedFPS + variance));
+        // HONESTY: this is a linear GPU/CPU-score scaling heuristic, NOT a
+        // benchmark. Real cross-device error is commonly ±15-30%. So we expose
+        // an estimate RANGE (not just a point) and never let the single number
+        // read as a measurement. Earlier code added a fake ±2 "variance" by
+        // hashing the device name — removed; it implied precision we don't have.
+        const ESTIMATE_MARGIN = 0.25; // ±25%
+        const lowFPS  = Math.max(1, Math.round(predictedFPS * (1 - ESTIMATE_MARGIN)));
+        const highFPS = Math.min(maxFPS, Math.round(predictedFPS * (1 + ESTIMATE_MARGIN)));
 
         const frameTime = (1000 / predictedFPS).toFixed(1);
         const verdict   = this.getVerdict(predictedFPS);
@@ -72,9 +76,14 @@ class PerformanceScaler {
             ram:          targetDeviceProfile.ram,
             gpu:          targetDeviceProfile.gpu,
             predictedFPS,
+            fpsRange:     [lowFPS, highFPS],
             frameTime,
             verdict,
-            bottleneck
+            bottleneck,
+            // Make the nature of the number unmistakable to any consumer.
+            estimate: true,
+            method: 'heuristic-scaling',
+            note: 'Estimate from linear GPU/CPU-score scaling, not an on-device benchmark. Typical error ±15-30%. Verify on a real device for sign-off.'
         };
     }
 
@@ -95,12 +104,16 @@ class PerformanceScaler {
         return 'LAGGY';
     }
 
+    // Confidence in the ESTIMATE (not a measurement). Ceiling is deliberately
+    // low: even with a stable long session on a known device, a linear scaling
+    // heuristic can't earn high confidence. 95% read as near-certain and was
+    // misleading. Base 45, capped at 70.
     static calculateConfidence(sessionInfo) {
-        let confidence = 70;
-        if (sessionInfo.fpsStable)        confidence += 10;
+        let confidence = 45;
+        if (sessionInfo.fpsStable)         confidence += 10;
         if (sessionInfo.deviceMatchedInDB) confidence += 10;
-        if (sessionInfo.duration > 60)    confidence += 10;
-        return Math.min(confidence, 95);
+        if (sessionInfo.duration > 60)     confidence += 5;
+        return Math.min(confidence, 70);
     }
 }
 

@@ -143,9 +143,11 @@
         if (UI.currentFPS) UI.currentFPS.textContent = currentDevice.fps;
         if (UI.currentMem) UI.currentMem.textContent = `${currentDevice.memory} MB`;
         if (UI.confidenceBadge) {
-            UI.confidenceBadge.textContent = `Confidence: ${confidence}%`;
-            UI.confidenceBadge.style.background = confidence > 80 ? 'rgba(45,212,191,0.1)' : 'rgba(251,191,36,0.1)';
-            UI.confidenceBadge.style.color = confidence > 80 ? '#2dd4bf' : '#fbbf24';
+            // Estimate confidence — caps at 70 by design (heuristic, not a benchmark).
+            UI.confidenceBadge.textContent = `Estimate confidence: ${confidence}%`;
+            UI.confidenceBadge.style.background = confidence >= 65 ? 'rgba(251,191,36,0.1)' : 'rgba(161,161,170,0.12)';
+            UI.confidenceBadge.style.color = confidence >= 65 ? '#fbbf24' : '#a1a1aa';
+            UI.confidenceBadge.title = 'Predictions are a linear GPU/CPU-score scaling estimate (±15-30%), not an on-device benchmark.';
         }
 
         // Smart Filtering — platform is always strict, tier/region are relaxable
@@ -180,7 +182,8 @@
                                 <div style="font-size: 10px; color: #71717a; margin-top: 2px;">${p.ram}GB RAM</div>
                             </td>
                             <td style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); font-weight: bold; color: ${verdictColor}; font-family: 'JetBrains Mono', monospace;">
-                                ${p.predictedFPS} FPS
+                                ~${p.predictedFPS} FPS
+                                ${Array.isArray(p.fpsRange) ? `<div style="font-size: 10px; color: #71717a; font-weight: 400; margin-top: 2px;">est. ${p.fpsRange[0]}–${p.fpsRange[1]}</div>` : ''}
                             </td>
                             <td style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); color: #71717a; font-size: 12px; font-family: 'JetBrains Mono', monospace;">
                                 ${p.frameTime} ms
@@ -197,6 +200,8 @@
         // Render Insights
         if (UI.insightsList) {
             const insights = [];
+            // Persistent honesty disclaimer — these are estimates, not measurements.
+            insights.push(`<div style="color: #fbbf24; font-size: 12px; background: rgba(251,191,36,0.08); border: 1px solid rgba(251,191,36,0.25); border-radius: 6px; padding: 8px 10px; margin-bottom: 8px;">ⓘ <strong>Estimates, not benchmarks.</strong> FPS is projected by linear GPU/CPU-score scaling from your test device — typical error ±15-30%. Use the ranges as a guide; verify on a real device before sign-off.</div>`);
             if (bottleneck !== 'Balanced') {
                 insights.push(`<div style="color: #fca5a5; font-size: 13px;">⚠️ <strong>Bottleneck Detected:</strong> System is primarily ${bottleneck}-bound.</div>`);
             } else {

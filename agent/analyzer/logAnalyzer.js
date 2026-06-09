@@ -115,6 +115,7 @@ const analyzeLogFile = (logFilePath) => {
 
     const seenErrors = new Set();
     const seenCrashes = new Set();
+    const seenAnrs = new Set();
 
     lines.forEach(line => {
         // ── TestMate SDK events (priority — extracted before issue classifier) ──
@@ -136,8 +137,17 @@ const analyzeLogFile = (logFilePath) => {
                 seenCrashes.add(crashKey);
             }
         }
-        if (line.includes('ANR') || line.includes('Application Not Responding')) {
-            results.anrCount = 1; // Usually ANR is a single session-level event
+        // Count distinct ANR events. The canonical per-event marker is the
+        // ActivityManager line "ANR in <pkg>"; the rest of the ANR dump is
+        // context. Match that (and the long-form text) and dedup so the
+        // multi-line dump doesn't inflate the count — but multiple separate
+        // ANRs in one session are now counted individually (was hardcoded 1).
+        if (/\bANR in\b/i.test(line) || line.includes('Application Not Responding')) {
+            const anrKey = line.substring(0, 80);
+            if (!seenAnrs.has(anrKey)) {
+                results.anrCount++;
+                seenAnrs.add(anrKey);
+            }
         }
         if (line.includes('Exception') || line.includes('Error')) {
             const errorKey = line.substring(0, 80);

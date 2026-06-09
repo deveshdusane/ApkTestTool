@@ -1071,11 +1071,22 @@ class RuntimeIntelligence {
         this.data.sdkIntelligence = sdkIntelligence.finalize(this.data.sdkIntelligence || sdkIntelligence.createEmptyIntelligence());
         this.generateInsights();
 
-        // Finalize Ads SDK checklist
-        this.data.checklist.ads_sdk = this.data.ads.status === 'Detected';
-
-        // Cross-check with sdkIntelligence for accurate runtime activity
+        // Cross-check every SDK checklist item against sdkIntelligence (the
+        // mediation-aware scanner). Our own per-SDK signal patterns can miss
+        // formats the dedicated scanner catches, so a clearly-active SDK must
+        // not read as absent.
         const sdks = this.data.sdkIntelligence?.sdks || {};
+
+        // Ads — was previously set ONLY from our own ad-signal detection, with
+        // no sdkIntelligence fallback (unlike firebase/appsflyer/crashlytics).
+        // That made "Ads SDK Installed" show ❌ while AdMob/AppLovin/etc were
+        // plainly active. Reconcile with the scanner + static scan.
+        const adsActiveInIntel = Object.values(sdks).some(
+            s => s && s.category === 'ADS' && (s.active || s.detected)
+        );
+        this.data.checklist.ads_sdk =
+            this.data.ads.status === 'Detected' || adsActiveInIntel || !!this.data.staticAds;
+
         if (!this.data.checklist.firebase_init) {
             const fb = sdks.firebase_analytics || sdks.firebase;
             if (fb?.active || (fb?.detected && this.data.firebase.count > 0)) {
