@@ -94,7 +94,7 @@ class SecurityAnalyzer {
             ...(manifest?.usesPermissionsSDK23 || [])
         ];
 
-        return [...new Set(manifestPermissions.map(permission => permission.name).filter(Boolean))];
+        return [...new Set(manifestPermissions.flatMap(permission => permission.name ? [permission.name] : []))];
     }
 
     normalizeBoolean(value) {

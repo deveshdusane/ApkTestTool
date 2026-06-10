@@ -142,9 +142,7 @@ class ApkAnalyzer {
                 const parsedPermissions = [
                     ...(result.usesPermissions || []),
                     ...(result.usesPermissionsSDK23 || [])
-                ]
-                    .map(permission => permission.name)
-                    .filter(Boolean);
+                ].flatMap(permission => permission.name ? [permission.name] : []);
                 info.permissions = [...new Set(parsedPermissions)];
             }
             
@@ -218,24 +216,19 @@ class ApkAnalyzer {
                 // Do not infer exported components from launchable-activity here.
                 // Full component data comes from AndroidManifest.xml parsing.
 
-                // Permissions extraction (Improved Regex to capture all permissions)
+                // Permissions extraction (Improved Regex to capture all permissions).
+                // Dedup with a Set (O(1) membership) instead of array.includes()
+                // on every match, which re-scanned the whole list each time.
+                const permSeen = new Set(info.permissions);
+                const addPerm = (p) => { if (!permSeen.has(p)) { permSeen.add(p); info.permissions.push(p); } };
+
                 const permRegex = /uses-permission:.*?name='([^']+)'/g;
                 let match;
-                while ((match = permRegex.exec(output)) !== null) {
-                    const fullPerm = match[1];
-                    if (!info.permissions.includes(fullPerm)) {
-                        info.permissions.push(fullPerm);
-                    }
-                }
-                
+                while ((match = permRegex.exec(output)) !== null) addPerm(match[1]);
+
                 // Fallback for different syntax: uses-permission:'...'
                 const altPermRegex = /uses-permission:'([^']+)'/g;
-                while ((match = altPermRegex.exec(output)) !== null) {
-                    const fullPerm = match[1];
-                    if (!info.permissions.includes(fullPerm)) {
-                        info.permissions.push(fullPerm);
-                    }
-                }
+                while ((match = altPermRegex.exec(output)) !== null) addPerm(match[1]);
 
                 // Supplementary list check for Engine (inside aapt)
                 try {

@@ -4,6 +4,18 @@ const sdkIntelligence = require('./sdkIntelligence');
 const networkDomainMonitor = require('../metrics/networkDomainMonitor');
 const { EventEngine } = require('./eventEngine');
 
+// Index SDK definitions by id ONCE, so the per-logcat-line hot path can look a
+// definition up instantly instead of re-scanning the whole list every time.
+// Built lazily and cached for the process lifetime (definitions are static).
+let _sdkDefById = null;
+function sdkDefById(id) {
+    if (!_sdkDefById) {
+        _sdkDefById = new Map();
+        for (const d of (sdkIntelligence.SDK_DEFINITIONS || [])) _sdkDefById.set(d.id, d);
+    }
+    return _sdkDefById.get(id);
+}
+
 /**
  * Runtime Intelligence Layer
  * Detects engine, ads, and firebase usage by analyzing live logs and system state.
@@ -250,7 +262,7 @@ class RuntimeIntelligence {
                 for (const sdkId of sdkMatches) {
                     // Allow GMS ad lines only when the APK scan already confirmed the ad SDK
                     // is in this app — prevents counting another app's GMS ad traffic as ours
-                    const sdkDef = sdkIntelligence.SDK_DEFINITIONS.find(d => d.id === sdkId);
+                    const sdkDef = sdkDefById(sdkId);
                     const isAdSdk = sdkDef?.category === 'ADS';
                     const gmsAdBypass = isAdSdk && this.data.staticAds &&
                         (line.includes('com.google.android.gms.ads') || line.includes('com.google.android.gms/ads'));
