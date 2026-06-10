@@ -3698,3 +3698,61 @@ input:focus, select:focus { border-color: var(--primary) !important; box-shadow:
     border-radius: 5px;
     margin-right: 4px;
 }
+
+/* ══════════════════════════════════════════════════════
+   GLOBAL POLISH PASS — applies to every tab
+   (additive: keyboard focus, metric stability, press
+   feedback, selection, motion preferences)
+   ══════════════════════════════════════════════════════ */
+
+/* Keyboard accessibility: visible focus ring on anything interactive,
+   only for keyboard navigation (not mouse clicks). */
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+    border-radius: var(--r-sm);
+}
+
+/* Metrics never jiggle: every monospace number uses fixed-width digits,
+   so live values (FPS, MB, counts) update without layout shift. */
+body, .lm-stat-value, .ce-badge-value, .ai-kpi-value, code, pre {
+    font-variant-numeric: tabular-nums;
+}
+
+/* Press feedback on all buttons — subtle, fast. */
+button:active:not(:disabled) {
+    transform: translateY(1px);
+}
+button {
+    transition: background-color var(--t-fast), border-color var(--t-fast),
+                color var(--t-fast), transform var(--t-fast), box-shadow var(--t-fast);
+}
+
+/* On-brand text selection. */
+::selection {
+    background: var(--primary-ring);
+    color: var(--text);
+}
+
+/* Disabled controls read as disabled everywhere. */
+button:disabled,
+input:disabled,
+select:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+/* (Tab-switch fade already exists via slideFadeIn — not duplicated here.) */
+
+/* Respect users who turn animations off at the OS level. */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}

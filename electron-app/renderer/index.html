@@ -323,7 +323,7 @@
             <section class="tab-panel" id="tab-runtime">
                 <div class="page-header">
                     <h1>Runtime Intelligence</h1>
-                    <p class="page-sub">Live behavioral analysis from gameplay logs and system state.</p>
+                    <p class="page-sub">Live analysis from logcat and system state — detected SDKs, keys, permissions and QA checks, each with its evidence.</p>
                 </div>
 
                 <div id="runtime-empty-state" class="empty-project-state" style="padding: 40px; text-align: center;">
@@ -716,7 +716,7 @@
             <section class="tab-panel" id="tab-events">
                 <div class="page-header">
                     <h1>Runtime Events</h1>
-                    <p class="page-sub">Live business events from analytics, IAP, and attribution SDKs.</p>
+                    <p class="page-sub">Live business events read from the app's own analytics, IAP and attribution logging — debug builds log the most.</p>
                 </div>
 
                 <div id="events-empty-state" class="empty-project-state" style="padding: 40px; text-align: center;">
@@ -1012,7 +1012,7 @@
             <section class="tab-panel" id="tab-iap">
                 <div class="page-header">
                     <h1>IAP Validation Engine</h1>
-                    <p class="page-sub">Assisted Mode: Real-time purchase flow verification using system signals.</p>
+                    <p class="page-sub">Purchase-flow tracking from billing logs — verifies the lifecycle (initiate → grant → finalize), not server receipts.</p>
                 </div>
 
                 <div id="iap-empty-state" class="empty-project-state">
@@ -1278,7 +1278,7 @@
             <section class="tab-panel" id="tab-static">
                 <div class="page-header">
                     <h1>Static Analysis</h1>
-                    <p class="page-sub">Decompiled APK insights and manifest intelligence.</p>
+                    <p class="page-sub">Manifest, signing, permissions, SDKs and asset integrity — read straight from the APK file, no device needed.</p>
                 </div>
 
                 <div id="static-empty-state" class="empty-project-state" style="padding: 40px; text-align: center;">
@@ -1487,7 +1487,7 @@
             <section class="tab-panel" id="tab-prediction">
                 <div class="page-header">
                     <h1>Device Performance Prediction</h1>
-                    <p class="page-sub">Real-time deterministic FPS scaling across hardware targets.</p>
+                    <p class="page-sub">FPS estimates scaled from your test device — heuristic (±15–30%), verify on real hardware before sign-off.</p>
                 </div>
 
                 <div id="prediction-empty-state" class="empty-project-state" style="padding: 40px; text-align: center;">
@@ -1629,7 +1629,7 @@
             <section class="tab-panel" id="tab-history">
                 <div class="page-header">
                     <h1>Session History</h1>
-                    <p class="page-sub">Browse past QA sessions for the active project.</p>
+                    <p class="page-sub">Past QA sessions for the active project — the latest 5 are kept, older runs are cleaned up automatically.</p>
                 </div>
 
                 <div class="history-layout">
