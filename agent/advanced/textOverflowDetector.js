@@ -301,7 +301,14 @@ function analyzeNode(node, screen) {
     // resource-id marks them as non-text controls (progress bars, icon/nav
     // buttons, media controls) — those are legitimately textless.
     const rid = String(node['resource-id'] || '');
+    // Skip near-full-screen "text widgets": a real label never covers most of
+    // the screen. WebView maps container divs (e.g. confetti/animation holders)
+    // to TextView with empty text — those are layout containers, not labels.
+    const screenArea = (screen.width || 0) * (screen.height || 0);
+    const isContainerSized = screenArea > 0 &&
+        (b.width * b.height) / screenArea > 0.7;
     if (text === '' && b.width > 40 && b.height > 10 &&
+        !isContainerSized &&
         !(node['content-desc'] || '').trim() &&
         !NON_TEXT_CONTROL_RE.test(rid)) {
         // Don't flag every empty container — must be a TextView/Button class

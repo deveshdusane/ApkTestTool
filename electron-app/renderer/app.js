@@ -1741,6 +1741,79 @@ function renderTrackingPlan(tp) {
     }
 }
 
+// Collapse/expand the SDK Key Lookup reference table (fallback docs — hidden
+// by default so the Runtime Intel tab leads with actionable checks, not a
+// 53-row cheat-sheet).
+function toggleSdkRefTable() {
+    const body = document.getElementById('sdk-ref-body');
+    const btn  = document.getElementById('sdk-ref-toggle');
+    if (!body) return;
+    const nowHidden = body.classList.toggle('hidden');
+    if (btn) btn.textContent = nowHidden ? 'Show reference table ▸' : 'Hide reference table ▾';
+}
+window.toggleSdkRefTable = toggleSdkRefTable;
+
+// Normalize an SDK name to a comparable "core" (drops "SDK"/"Analytics"/".io"
+// and punctuation) so "Firebase Analytics", "Facebook SDK", "Branch.io" line up
+// with the reference table and the extracted keys.
+function normSdkName(s) {
+    return String(s || '').toLowerCase()
+        .replace(/\banalytics\b/g, '')
+        .replace(/\bsdk\b/g, '')
+        .replace(/\.io\b/g, '')
+        .replace(/[^a-z0-9]/g, '');
+}
+
+// ACTIVE key validation: for every DETECTED key-bearing SDK, did we auto-detect
+// a key? Surfaces a focused "verify these" worklist + any risky keys. Wording is
+// deliberately "not auto-detected — verify" (NOT "missing"): the extractor can
+// miss obfuscated/binary keys, so we don't overclaim absence.
+function renderSdkKeyValidation(sdkIntel) {
+    const el = document.getElementById('sdk-key-validation');
+    if (!el) return;
+    const sdks = sdkIntel && sdkIntel.sdks ? Object.values(sdkIntel.sdks) : [];
+    const detected = sdks.filter(s => s.detected);
+    const keys = (sdkIntel && sdkIntel.keys) || [];
+    if (detected.length === 0) { el.innerHTML = ''; return; }
+
+    const keyCores = new Set(keys.map(k => normSdkName(k.sdk)));
+    // First reference row per SDK core = a representative expected format.
+    const refByCore = {};
+    for (const r of SDK_KEY_REFERENCE) {
+        const core = normSdkName(r.sdk);
+        if (core && !refByCore[core]) refByCore[core] = { sdk: r.sdk, format: r.expectedFormat };
+    }
+
+    const seen = new Set();
+    const needsVerify = [];
+    for (const s of detected) {
+        const core = normSdkName(s.name || s.id);
+        if (!core || seen.has(core)) continue;
+        seen.add(core);
+        const ref = refByCore[core];
+        if (!ref) continue;            // SDK has no expected key in our reference
+        if (keyCores.has(core)) continue;   // a key was found for it → ok
+        needsVerify.push({ name: s.name || s.id, format: ref.format });
+    }
+
+    const risky = keys.filter(k => k.status && k.status !== 'Valid');
+    const validCount = keys.filter(k => k.status === 'Valid').length;
+
+    if (needsVerify.length === 0 && risky.length === 0) {
+        el.innerHTML = '<div style="font-size:12px;color:#4ade80;background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.25);border-radius:8px;padding:10px 12px;">✓ Every detected key-bearing SDK has a valid key (' + validCount + ' verified).</div>';
+        return;
+    }
+
+    let html = '<div style="font-size:12px;font-weight:700;color:#e4e4e7;margin-bottom:8px;">🔑 Key Validation <span style="color:#71717a;font-weight:400;">— detected SDKs checked against keys found</span></div>';
+    for (const k of risky) {
+        html += '<div style="font-size:12px;color:#fca5a5;background:rgba(248,113,113,0.08);border:1px solid rgba(248,113,113,0.25);border-radius:7px;padding:8px 12px;margin-bottom:6px;">🔴 <strong>' + escapeHtml(k.sdk) + '</strong> — ' + escapeHtml(k.keyType || k.keyName || 'key') + ': ' + escapeHtml(k.status) + '</div>';
+    }
+    for (const v of needsVerify) {
+        html += '<div style="font-size:12px;color:#fbbf24;background:rgba(251,191,36,0.07);border:1px solid rgba(251,191,36,0.22);border-radius:7px;padding:8px 12px;margin-bottom:6px;">⚠ <strong>' + escapeHtml(v.name) + '</strong> detected, but no key auto-detected — verify manually (expected: ' + escapeHtml(v.format) + ')</div>';
+    }
+    el.innerHTML = html;
+}
+
 function renderRuntimeTab(runtime) {
     if (!runtime) {
         runtimeContent.classList.add('hidden');
@@ -1852,6 +1925,8 @@ function renderRuntimeTab(runtime) {
     }
 
     // Extracted Keys list
+    renderSdkKeyValidation(sdkIntel);
+
     const sdkExtractedSection = document.getElementById('sdk-extracted-keys-section');
     if (sdkExtractedSection) {
         if (!sdkIntel) {
