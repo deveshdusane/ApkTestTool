@@ -108,7 +108,6 @@ class RuntimeIntelligence {
                 status: 'ONLINE'
             },
             checklist: {
-                splash_screen: false,
                 game_start: false,
                 firebase_init: false,
                 ads_sdk: false,
@@ -360,17 +359,9 @@ class RuntimeIntelligence {
                     }
                 }
 
-                // Splash Screen — must be early in session and match strict patterns
-                if (!this.data.checklist.splash_screen && eventTime <= 20) {
-                    const splashPatterns = [
-                        /\bSplashActivity\b/, /\bSplashScreen\b/, /\bSplashFragment\b/,
-                        /\bsplash_screen\b/i, /scene[ '"]+splash/i, /\/splash\b/i,
-                        /LoadingScreen/, /\bIntroActivity\b/
-                    ];
-                    if (splashPatterns.some(re => re.test(line))) {
-                        setCheck('splash_screen', line.trim());
-                    }
-                }
+                // (Splash-screen check removed: name-pattern matching is fragile —
+                // Unity games rarely log "splash", producing a permanent false ❌.
+                // Same reason splash_stuck is excluded from the validation aggregator.)
 
                 // Crash Detection — FATAL EXCEPTION attributable to this app
                 if (this.data.checklist.no_crashes) {
@@ -412,24 +403,12 @@ class RuntimeIntelligence {
                         setCheck('game_start', `Activity displayed: ${actShort}`);
                     }
 
-                    // Fallback: track activity flow → infer splash from first→second transition
+                    // Track activity flow (still used for context/timeline).
                     if (!this._activityDisplays) this._activityDisplays = [];
                     if (!this._activityDisplays.find(a => a.activity === actShort)) {
                         this._activityDisplays.push({ time: eventTime, activity: actShort });
                     }
-                    if (!this.data.checklist.splash_screen && this._activityDisplays.length >= 2) {
-                        const first = this._activityDisplays[0];
-                        const second = this._activityDisplays[1];
-                        // Splash heuristic: first activity within 10s, replaced by another within 25s
-                        if (first.time <= 10 && (second.time - first.time) <= 25 && (second.time - first.time) >= 0.5) {
-                            setCheck('splash_screen', `Inferred from activity flow: ${first.activity} → ${second.activity}`);
-                        }
-                    }
-                    // Single-activity splash (Android 12+ theme splash → MainActivity is the only one shown,
-                    // but the activity name itself contains a splash hint we missed)
-                    if (!this.data.checklist.splash_screen && /splash|launch|boot|intro|welcome/i.test(actShort) && eventTime <= 15) {
-                        setCheck('splash_screen', `Activity name match: ${actShort}`);
-                    }
+                    // (Splash inference removed — heuristic, produced false results.)
                 }
 
                 // SYSTEM: App process start
@@ -870,7 +849,7 @@ class RuntimeIntelligence {
     /**
      * Polls dumpsys activity for the resumed activity of the package.
      * Bypasses logcat --pid filter, which strips ActivityManager lines.
-     * Drives game_start + splash_screen checklist items.
+     * Drives the game_start checklist item.
      */
     async updateActivityFlow(deviceId, packageName) {
         if (!deviceId || !packageName) return;
@@ -905,19 +884,7 @@ class RuntimeIntelligence {
                 if (!this.data.checklist.game_start) {
                     setCheck('game_start', `Resumed activity: ${actShort}`);
                 }
-
-                if (!this.data.checklist.splash_screen) {
-                    if (/splash|launch|boot|intro|welcome/i.test(actShort) && eventTime <= 15) {
-                        setCheck('splash_screen', `Activity name: ${actShort}`);
-                    } else if (this._activityDisplays.length >= 2) {
-                        const first = this._activityDisplays[0];
-                        const second = this._activityDisplays[1];
-                        const gap = second.time - first.time;
-                        if (first.time <= 10 && gap <= 25 && gap >= 0.5) {
-                            setCheck('splash_screen', `Activity flow: ${first.activity} → ${second.activity}`);
-                        }
-                    }
-                }
+                // (Splash inference removed — name/flow heuristics produced false results.)
 
                 // Push timeline event so the user sees activity transitions live
                 const lastTime = this._lastEventTimes.get(`act_${actShort}`);
@@ -1153,6 +1120,12 @@ class RuntimeIntelligence {
         }
         if (!this.data.checklist.appsflyer && sdks.appsflyer?.active) {
             this.data.checklist.appsflyer = true;
+        }
+        // Tri-state AppsFlyer: when the SDK isn't in the build AT ALL, a red ❌
+        // ("init failed") is misleading — report null and the UI shows N/A.
+        // ❌ remains only for the meaningful case: SDK present but never initialized.
+        if (this.data.checklist.appsflyer === false && !sdks.appsflyer?.detected) {
+            this.data.checklist.appsflyer = null;
         }
         if (!this.data.checklist.crashlytics_init && sdks.crashlytics?.active) {
             this.data.checklist.crashlytics_init = true;

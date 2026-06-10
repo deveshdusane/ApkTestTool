@@ -691,6 +691,7 @@ function renderAssetIntegrity(ai) {
 
     if (!ai || !ai.summary) {
         setText('ai-warnings-count', '—');
+        setText('ai-scan-summary', 'Scans every file inside the APK for packaging errors — no device needed.');
         setText('ai-zero-byte', '—');
         setText('ai-tiny-audio', '—');
         setText('ai-dups', '—');
@@ -711,14 +712,43 @@ function renderAssetIntegrity(ai) {
         warnCountEl.className = 'ai-warnings-count ' + (warnCount === 0 ? 'ai-clean' : 'ai-has-warnings');
     }
 
-    setText('ai-zero-byte', s.zeroByteCount);
-    setText('ai-tiny-audio', s.suspiciousAudioCount);
-    setText('ai-dups', s.duplicateGroupCount);
-    setText('ai-dup-waste', fmtMB(s.dupWastedBytes) + ' MB wasted');
-    setText('ai-locales', s.localesCount);
-    setText('ai-loc-completeness', s.localesCount > 0 ? s.localizationCompleteness + '%' : '—');
+    // What was scanned — headline so the numbers below have a denominator.
+    setText('ai-scan-summary',
+        'Scanned ' + (s.totalFiles || 0).toLocaleString() + ' files · ' + fmtMB(s.totalBytes) + ' MB inside the APK — packaging errors, no device needed.');
 
-    // Categories grid
+    // KPI values with verdict coloring: green = clean, amber = needs a look.
+    const setKpi = (id, value, isClean) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.textContent = value;
+        el.style.color = isClean ? '#4ade80' : '#fbbf24';
+    };
+    setKpi('ai-zero-byte', s.zeroByteCount, s.zeroByteCount === 0);
+    setText('ai-zero-byte-sub', s.zeroByteCount === 0 ? 'none — no stub files shipped' : 'placeholder files never replaced');
+    setKpi('ai-tiny-audio', s.suspiciousAudioCount, s.suspiciousAudioCount === 0);
+    setText('ai-tiny-audio-sub', s.suspiciousAudioCount === 0 ? 'none — no empty voice stubs' : 'voice/SFX files under 10 KB');
+
+    // Duplicates: contextualize against the analyzer's own 1 MB warn threshold
+    // so "169" doesn't read as alarming when the waste is trivial.
+    const wastedMB = Number(s.dupWastedBytes || 0) / 1048576;
+    setKpi('ai-dups', s.duplicateGroupCount, wastedMB <= 1);
+    setText('ai-dup-waste', wastedMB.toFixed(2) + ' MB wasted' + (s.duplicateGroupCount > 0 && wastedMB <= 1 ? ' — trivial, not a concern' : ''));
+
+    // Localization: when zero locales, say WHY instead of a bare dash.
+    setKpi('ai-locales', s.localesCount, s.localesCount === 0 || s.localizationCompleteness >= 95);
+    setText('ai-loc-completeness', s.localesCount > 0
+        ? s.localizationCompleteness + '% complete vs base strings'
+        : 'binary resources — see findings');
+
+    // Categories grid — composition of the APK with visible % share + plain-
+    // language meaning per category on hover.
+    const CAT_MEANING = {
+        native:  'Compiled engine/game code (.so libraries)',
+        bundle:  'Unity packed asset bundles — textures/audio/scenes live INSIDE these (not individually scannable)',
+        code:    'App bytecode (.dex/.jar)',
+        image:   'Loose image files', audio: 'Loose audio files', video: 'Video files',
+        font:    'Fonts', text: 'JSON/XML/config files', archive: 'Zip/agz archives', other: 'Unclassified files'
+    };
     const cats = ai.categories || {};
     const catOrder = Object.entries(cats).sort((a, b) => b[1].bytes - a[1].bytes);
     if (catOrder.length === 0) {
@@ -727,9 +757,10 @@ function renderAssetIntegrity(ai) {
         const totalBytes = Object.values(cats).reduce((sum, c) => sum + c.bytes, 0);
         setHTML('ai-cat-grid', catOrder.map(([cat, c]) => {
             const pct = totalBytes > 0 ? (c.bytes / totalBytes * 100) : 0;
-            return '<div class="ai-cat">' +
-                '<div class="ai-cat-name">' + escapeHtml(cat) + '</div>' +
-                '<div class="ai-cat-bar"><div class="ai-cat-bar-fill" style="width:' + pct.toFixed(1) + '%"></div></div>' +
+            const meaning = CAT_MEANING[cat.toLowerCase()] || '';
+            return '<div class="ai-cat" title="' + escapeHtml(meaning) + '">' +
+                '<div class="ai-cat-name">' + escapeHtml(cat) + ' <span style="color:#71717a;font-weight:400;">' + (pct >= 1 ? pct.toFixed(0) + '%' : '<1%') + '</span></div>' +
+                '<div class="ai-cat-bar"><div class="ai-cat-bar-fill" style="width:' + Math.max(pct, 1).toFixed(1) + '%"></div></div>' +
                 '<div class="ai-cat-meta"><span>' + c.count + ' files</span><span>' + fmtMB(c.bytes) + ' MB</span></div>' +
             '</div>';
         }).join(''));
@@ -2008,29 +2039,49 @@ function renderRuntimeTab(runtime) {
         }
     }
 
-    // QA Checklist Validation
+    // QA Checklist Validation — rendered with a plain-language description of
+    // WHAT each check verifies + the actual evidence captured (log line / source),
+    // so a tester understands the result without reading code. Tri-state:
+    // true ✅ / false ❌ / null = N/A (check not applicable to this build).
     if (runtime.checklist) {
-        const updateQA = (id, val) => {
-            const el = document.getElementById(id);
-            if (el) el.textContent = val ? '✅' : '❌';
-        };
-        updateQA('qa-game-start', runtime.checklist.game_start);
-        updateQA('qa-splash-screen', runtime.checklist.splash_screen);
-        updateQA('qa-build-64bit', runtime.checklist.build_64bit);
-        updateQA('qa-build-release', runtime.checklist.build_release);
-        updateQA('qa-firebase-init', runtime.checklist.firebase_init);
-        updateQA('qa-ads-sdk', runtime.checklist.ads_sdk);
-        updateQA('qa-appsflyer', runtime.checklist.appsflyer);
-        updateQA('qa-safe-permissions', runtime.checklist.safe_permissions);
-        updateQA('qa-no-crashes', runtime.checklist.no_crashes);
-        updateQA('qa-no-anrs', runtime.checklist.no_anrs);
-        updateQA('qa-network-active', runtime.checklist.network_active);
-        updateQA('qa-crashlytics-init', runtime.checklist.crashlytics_init);
-        updateQA('qa-target-sdk-compliant', runtime.checklist.target_sdk_compliant);
-
-        const tsdEl = document.getElementById('qa-target-sdk-detail');
-        if (tsdEl) {
-            tsdEl.textContent = runtime.targetSdk ? `(target=${runtime.targetSdk})` : '';
+        const QA_CHECK_DEFS = [
+            { key: 'game_start',           label: 'Game Start',            desc: 'App launched and reached gameplay' },
+            { key: 'no_crashes',           label: 'No Crashes',            desc: 'No fatal crash from this app in session logs' },
+            { key: 'no_anrs',              label: 'No ANRs',               desc: 'No app-freeze (Application Not Responding) detected' },
+            { key: 'build_64bit',          label: '64-Bit Play Store Ready', desc: 'arm64-v8a native code present — Play Store requirement' },
+            { key: 'build_release',        label: 'Release Build Integrity', desc: 'Build is not debuggable — required for store release' },
+            { key: 'target_sdk_compliant', label: 'Target SDK Compliant',  desc: 'Target SDK meets Play Store minimum (≥ 33)' },
+            { key: 'safe_permissions',     label: 'Permissions Security',  desc: 'No dangerous permissions granted at runtime' },
+            { key: 'firebase_init',        label: 'Firebase SDK Init',     desc: 'Firebase initialized and logged events at runtime' },
+            { key: 'ads_sdk',              label: 'Ads SDK Active',        desc: 'Ad SDK present in build / active during gameplay' },
+            { key: 'appsflyer',            label: 'AppsFlyer Init',        desc: 'AppsFlyer attribution initialized at runtime' },
+            { key: 'crashlytics_init',     label: 'Crashlytics Init',      desc: 'Crash reporting active — production crashes will be captured' },
+            { key: 'network_active',       label: 'Network Activity',      desc: 'App network traffic observed during the session' }
+        ];
+        const rowsEl = document.getElementById('qa-checklist-rows');
+        if (rowsEl) {
+            const evidence = runtime.checklistEvidence || {};
+            rowsEl.innerHTML = QA_CHECK_DEFS.map(def => {
+                const val = runtime.checklist[def.key];
+                const isNA = val === null || val === undefined;
+                const icon = isNA ? '<span style="color:#71717a;font-size:11px;font-weight:600;">N/A</span>'
+                           : val ? '✅' : '❌';
+                let desc = def.desc;
+                if (def.key === 'target_sdk_compliant' && runtime.targetSdk) desc += ` — this build: ${runtime.targetSdk}`;
+                if (def.key === 'appsflyer' && isNA) desc = 'AppsFlyer SDK not in this build — check skipped';
+                const ev = evidence[def.key];
+                const evLine = ev && ev.evidence
+                    ? `<div style="font-size:10px;color:#52525b;font-family:monospace;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${escapeHtml(ev.evidence)}">@${ev.time}s · ${escapeHtml(ev.evidence.slice(0, 90))}</div>`
+                    : '';
+                return `<div style="padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05);">
+                    <div style="display:flex;justify-content:space-between;align-items:center;">
+                        <span style="font-size:13px;color:#e4e4e7;">${def.label}</span>
+                        <span style="font-size:13px;">${icon}</span>
+                    </div>
+                    <div style="font-size:11px;color:#71717a;margin-top:1px;">${desc}</div>
+                    ${evLine}
+                </div>`;
+            }).join('');
         }
     }
 

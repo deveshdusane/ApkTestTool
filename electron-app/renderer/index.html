@@ -569,74 +569,9 @@
                             </div>
                         </div>
 
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
-                            <div>
-                                <div
-                                    style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">
-                                    <span style="font-size: 13px; color: #e4e4e7;">Game Start</span>
-                                    <span id="qa-game-start" style="font-size: 13px;">❌</span>
-                                </div>
-                                <div
-                                    style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">
-                                    <span style="font-size: 13px; color: #e4e4e7;">Splash Screen</span>
-                                    <span id="qa-splash-screen" style="font-size: 13px;">❌</span>
-                                </div>
-                                <div
-                                    style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">
-                                    <span style="font-size: 13px; color: #e4e4e7;">64-Bit Play Store Ready</span>
-                                    <span id="qa-build-64bit" style="font-size: 13px;">❌</span>
-                                </div>
-                                <div
-                                    style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">
-                                    <span style="font-size: 13px; color: #e4e4e7;">Release Build Integrity</span>
-                                    <span id="qa-build-release" style="font-size: 13px;">❌</span>
-                                </div>
-                                <div
-                                    style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">
-                                    <span style="font-size: 13px; color: #e4e4e7;" title="Play Store requires targetSdk ≥ 33">Target SDK Compliant <span id="qa-target-sdk-detail" style="color:#71717a;font-size:11px;"></span></span>
-                                    <span id="qa-target-sdk-compliant" style="font-size: 13px;">❌</span>
-                                </div>
-                                <div style="display: flex; justify-content: space-between; padding: 6px 0;">
-                                    <span style="font-size: 13px; color: #e4e4e7;">No Crashes</span>
-                                    <span id="qa-no-crashes" style="font-size: 13px;">❌</span>
-                                </div>
-                            </div>
-                            <div>
-                                <div
-                                    style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">
-                                    <span style="font-size: 13px; color: #e4e4e7;">Firebase SDK Init</span>
-                                    <span id="qa-firebase-init" style="font-size: 13px;">❌</span>
-                                </div>
-                                <div
-                                    style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">
-                                    <span style="font-size: 13px; color: #e4e4e7;">Ads SDK Installed</span>
-                                    <span id="qa-ads-sdk" style="font-size: 13px;">❌</span>
-                                </div>
-                                <div
-                                    style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">
-                                    <span style="font-size: 13px; color: #e4e4e7;">AppsFlyer Init</span>
-                                    <span id="qa-appsflyer" style="font-size: 13px;">❌</span>
-                                </div>
-                                <div
-                                    style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">
-                                    <span style="font-size: 13px; color: #e4e4e7;">Crashlytics Init</span>
-                                    <span id="qa-crashlytics-init" style="font-size: 13px;">❌</span>
-                                </div>
-                                <div
-                                    style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">
-                                    <span style="font-size: 13px; color: #e4e4e7;">Permissions Security</span>
-                                    <span id="qa-safe-permissions" style="font-size: 13px;">❌</span>
-                                </div>
-                                <div
-                                    style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">
-                                    <span style="font-size: 13px; color: #e4e4e7;">No ANRs</span>
-                                    <span id="qa-no-anrs" style="font-size: 13px;">❌</span>
-                                </div>
-                                <div style="display: flex; justify-content: space-between; padding: 6px 0;">
-                                    <span style="font-size: 13px; color: #e4e4e7;">Network Activity</span>
-                                    <span id="qa-network-active" style="font-size: 13px;">❌</span>
-                                </div>
-                            </div>
+                        <!-- Rows rendered dynamically with description + evidence per check -->
+                        <div id="qa-checklist-rows" style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px 24px;">
+                            <span style="font-size: 12px; color: #71717a;">Waiting for session data…</span>
                         </div>
                     </div>
 
@@ -1492,17 +1427,24 @@
                             <div class="ai-warnings-count" id="ai-warnings-count">—</div>
                         </div>
 
+                        <!-- What was scanned -->
+                        <div id="ai-scan-summary" style="font-size: 12px; color: #a1a1aa; margin: 2px 0 12px;">
+                            Scans every file inside the APK for packaging errors — no device needed.
+                        </div>
+
                         <!-- KPI strip -->
                         <div class="ai-kpis">
                             <div class="ai-kpi" title="Files that are exactly 0 bytes — placeholder stubs never replaced before build">
                                 <div class="ai-kpi-label">Zero-byte</div>
                                 <div class="ai-kpi-value" id="ai-zero-byte">—</div>
+                                <div class="ai-kpi-sub" id="ai-zero-byte-sub">placeholder files never replaced</div>
                             </div>
                             <div class="ai-kpi" title="Audio files under 10KB — likely empty voice/SFX stubs">
                                 <div class="ai-kpi-label">Tiny Audio</div>
                                 <div class="ai-kpi-value" id="ai-tiny-audio">—</div>
+                                <div class="ai-kpi-sub" id="ai-tiny-audio-sub">voice/SFX files under 10 KB</div>
                             </div>
-                            <div class="ai-kpi" title="Files appearing at multiple paths — wasted bundle size">
+                            <div class="ai-kpi" title="Identical files (same content hash) at multiple paths — wasted download size">
                                 <div class="ai-kpi-label">Duplicates</div>
                                 <div class="ai-kpi-value" id="ai-dups">—</div>
                                 <div class="ai-kpi-sub" id="ai-dup-waste">— MB wasted</div>
