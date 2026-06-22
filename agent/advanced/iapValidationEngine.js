@@ -27,18 +27,18 @@ const fs = require('fs');
 // Google Play Billing Library response codes (v3 — v7).
 // Source: BillingClient.BillingResponseCode constants (public Google docs).
 const BILLING_RESPONSE_CODES = {
-    '-3': { name: 'SERVICE_TIMEOUT',           type: 'danger',  message: 'Network connection slow — billing service timed out.' },
-    '-2': { name: 'FEATURE_NOT_SUPPORTED',     type: 'warning', message: 'Requested feature is not supported by the Play Store on this device.' },
-    '-1': { name: 'SERVICE_DISCONNECTED',      type: 'danger',  message: 'Play Billing service disconnected. The client must reconnect.' },
-    '0':  { name: 'OK',                        type: 'success', message: 'Success — no error.' },
-    '1':  { name: 'USER_CANCELED',             type: 'warning', message: 'User pressed back or cancelled the purchase dialog.' },
-    '2':  { name: 'SERVICE_UNAVAILABLE',       type: 'danger',  message: 'Network connection is down.' },
-    '3':  { name: 'BILLING_UNAVAILABLE',       type: 'danger',  message: 'Billing API version not supported, or Play Store needs an update.' },
-    '4':  { name: 'ITEM_UNAVAILABLE',          type: 'danger',  message: 'Requested SKU is not available for purchase. Check Play Console product setup.' },
-    '5':  { name: 'DEVELOPER_ERROR',           type: 'danger',  message: 'Invalid arguments — typically misconfigured product, signature mismatch, or wrong package name.' },
-    '6':  { name: 'ERROR',                     type: 'danger',  message: 'Fatal error during the API action.' },
-    '7':  { name: 'ITEM_ALREADY_OWNED',        type: 'warning', message: 'Player already owns this item — likely missing consumePurchase for a consumable.' },
-    '8':  { name: 'ITEM_NOT_OWNED',            type: 'warning', message: 'consumePurchase failed because the player does not own this item.' }
+    '-3': { name: 'SERVICE_TIMEOUT', type: 'danger', message: 'Network connection slow — billing service timed out.' },
+    '-2': { name: 'FEATURE_NOT_SUPPORTED', type: 'warning', message: 'Requested feature is not supported by the Play Store on this device.' },
+    '-1': { name: 'SERVICE_DISCONNECTED', type: 'danger', message: 'Play Billing service disconnected. The client must reconnect.' },
+    '0': { name: 'OK', type: 'success', message: 'Success — no error.' },
+    '1': { name: 'USER_CANCELED', type: 'warning', message: 'User pressed back or cancelled the purchase dialog.' },
+    '2': { name: 'SERVICE_UNAVAILABLE', type: 'danger', message: 'Network connection is down.' },
+    '3': { name: 'BILLING_UNAVAILABLE', type: 'danger', message: 'Billing API version not supported, or Play Store needs an update.' },
+    '4': { name: 'ITEM_UNAVAILABLE', type: 'danger', message: 'Requested SKU is not available for purchase. Check Play Console product setup.' },
+    '5': { name: 'DEVELOPER_ERROR', type: 'danger', message: 'Invalid arguments — typically misconfigured product, signature mismatch, or wrong package name.' },
+    '6': { name: 'ERROR', type: 'danger', message: 'Fatal error during the API action.' },
+    '7': { name: 'ITEM_ALREADY_OWNED', type: 'warning', message: 'Player already owns this item — likely missing consumePurchase for a consumable.' },
+    '8': { name: 'ITEM_NOT_OWNED', type: 'warning', message: 'consumePurchase failed because the player does not own this item.' }
 };
 
 const RESPONSE_CODE_NAMES = new Set(Object.values(BILLING_RESPONSE_CODES).map(c => c.name));
@@ -77,7 +77,7 @@ class IAPValidationEngine {
                 launchFlow: 0,
                 purchaseResolved: 0,
                 billingClientLogs: 0
-            }   
+            }
         };
         // Internal tracking — not serialised to UI.
         this._lastBillingActivityMs = null;
@@ -99,7 +99,7 @@ class IAPValidationEngine {
             if (dump && /com\.android\.vending\.BILLING|billingclient|BillingClient/i.test(dump)) {
                 system = 'Google Play Billing';
             }
-        } catch {}
+        } catch { }
 
         // Method 2: classes.dex grep on device — fallback for cases where dumpsys doesn't expose it.
         if (system === 'Not Detected') {
@@ -117,7 +117,7 @@ class IAPValidationEngine {
                         }
                     }
                 }
-            } catch {}
+            } catch { }
         }
 
         // Method 3: read library version from APK manifest meta-data (most reliable identifier).
@@ -312,7 +312,7 @@ class IAPValidationEngine {
         const evs = this.data.events;
         const hasInitiated = !!evs.find(e => e.name === 'Purchase Initiated');
         const hasCompleted = !!evs.find(e => e.name === 'Purchase Completed');
-        const hasFailed    = !!evs.find(e => /Purchase Failed/.test(e.name));
+        const hasFailed = !!evs.find(e => /Purchase Failed/.test(e.name));
         const hasCancelled = !!evs.find(e => /Purchase Cancelled/.test(e.name));
 
         // (A + B) Purchase finalization verdict — only meaningful if a purchase actually completed.
@@ -363,6 +363,7 @@ class IAPValidationEngine {
         } else if (hasInitiated) {
             this.data.status = 'INCOMPLETE';
         } else {
+
             this.data.status = 'INCOMPLETE';
         }
     }

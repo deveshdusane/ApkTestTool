@@ -719,6 +719,94 @@
                     <p class="page-sub">Live business events read from the app's own analytics, IAP and attribution logging — debug builds log the most.</p>
                 </div>
 
+                <!-- ── Narrative Script Check (deviceless dialog/choice QA) ─ -->
+                <div class="card ce-card" id="script-check-card" style="padding: 0; margin-bottom: 16px;">
+                    <div class="ce-header">
+                        <div class="ce-title">
+                            <span class="ce-icon">📖</span>
+                            <span>Narrative Script Check</span>
+                            <span class="ce-tag" title="Scans your dialog/choice sheet for issues — no device needed">Sheet · deviceless</span>
+                        </div>
+                        <div class="ce-badges" id="sc-badges" style="display:none;">
+                            <div class="ce-badge" title="Days parsed from the sheet">
+                                <span class="ce-badge-label">Days</span>
+                                <span class="ce-badge-value" id="sc-stat-days">0</span>
+                            </div>
+                            <div class="ce-badge" title="Choices parsed from the sheet">
+                                <span class="ce-badge-label">Choices</span>
+                                <span class="ce-badge-value" id="sc-stat-choices">0</span>
+                            </div>
+                            <div class="ce-badge" title="Total issues found in the script">
+                                <span class="ce-badge-label">Issues</span>
+                                <span class="ce-badge-value" id="sc-stat-issues">0</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="ce-section" style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                        <button id="sc-import-btn" class="btn-secondary" style="font-size:12px; padding:6px 12px;">📖 Import dialog sheet (CSV)</button>
+                        <button id="sc-clear-btn" class="btn-secondary" style="font-size:12px; padding:6px 12px; display:none;">Clear</button>
+                        <span id="sc-toolbar-note" style="font-size:12px; color:#94A3B8;">Upload your dialogs &amp; choices sheet — typos, encoding errors and unfilled name-placeholders are flagged without a device.</span>
+                    </div>
+
+                    <div id="script-check-body" class="ce-section"></div>
+                </div>
+
+                <!-- ── Narrative Auto-Play (drive the game on a device) ──── -->
+                <div class="card ce-card" id="autoplay-card" style="padding: 0; margin-bottom: 16px;">
+                    <div class="ce-header">
+                        <div class="ce-title">
+                            <span class="ce-icon">🎮</span>
+                            <span>Narrative Auto-Play</span>
+                            <span class="ce-tag" title="Drives the game on a connected device by tapping Next">Beta · device</span>
+                        </div>
+                        <div class="ce-badges" id="ap-badges" style="display:none;">
+                            <div class="ce-badge" title="Frames captured this run">
+                                <span class="ce-badge-label">Frames</span>
+                                <span class="ce-badge-value" id="ap-stat-frames">0</span>
+                            </div>
+                            <div class="ce-badge" title="Frames where the tap advanced the screen">
+                                <span class="ce-badge-label">Advanced</span>
+                                <span class="ce-badge-value" id="ap-stat-adv">0</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Step 1 — Calibrate -->
+                    <div class="ce-section">
+                        <div style="font-size:13px;font-weight:600;color:#e4e4e7;margin-bottom:4px;">1 · Calibrate <span style="color:#71717a;font-weight:400;">(once per game — every game's buttons sit differently)</span></div>
+                        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0;">
+                            <button id="ap-capture-btn" class="btn-secondary" style="font-size:12px;padding:6px 12px;">📸 Capture frame</button>
+                            <button id="ap-mode-next" class="btn-secondary" style="font-size:12px;padding:6px 12px;">Set Next button</button>
+                            <button id="ap-mode-choice" class="btn-secondary" style="font-size:12px;padding:6px 12px;">Add choice slot</button>
+                            <button id="ap-mode-continue" class="btn-secondary" style="font-size:12px;padding:6px 12px;">Add continue button</button>
+                            <button id="ap-mode-dialog" class="btn-secondary" style="font-size:12px;padding:6px 12px;">Set dialog box</button>
+                            <button id="ap-mode-clear" class="btn-secondary" style="font-size:12px;padding:6px 12px;">Clear markers</button>
+                            <button id="ap-save-btn" class="btn-secondary" style="font-size:12px;padding:6px 12px;">💾 Save calibration</button>
+                        </div>
+                        <div id="ap-cal-note" style="font-size:12px;color:#94A3B8;margin-bottom:10px;">Open the game to a dialog frame, click <b>Capture frame</b>, then click the <b>Next</b> button on the screenshot.</div>
+                        <div id="ap-frame-wrap" style="position:relative;display:none;width:260px;border:1px solid #334155;border-radius:8px;overflow:hidden;cursor:crosshair;">
+                            <img id="ap-frame-img" style="display:block;width:100%;height:auto;" />
+                            <div id="ap-markers" style="position:absolute;inset:0;pointer-events:none;"></div>
+                        </div>
+                    </div>
+
+                    <!-- Step 2 — Run -->
+                    <div class="ce-section">
+                        <div style="font-size:13px;font-weight:600;color:#e4e4e7;margin-bottom:10px;">2 · Run auto-play</div>
+                        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
+                            <label style="font-size:12px;color:#94A3B8;">Steps
+                                <input id="ap-steps" type="number" value="30" min="1" max="200" style="width:58px;margin-left:4px;background:#0F172A;border:1px solid #334155;color:#e4e4e7;border-radius:6px;padding:4px 6px;font-size:12px;">
+                            </label>
+                            <button id="ap-run-btn" class="btn-secondary" style="font-size:12px;padding:6px 12px;">▶ Start auto-play</button>
+                            <button id="ap-stop-btn" class="btn-secondary" style="font-size:12px;padding:6px 12px;display:none;">■ Stop</button>
+                            <span id="ap-run-note" style="font-size:12px;color:#94A3B8;"></span>
+                        </div>
+                        <div id="ap-run-log" style="max-height:280px;overflow:auto;font-size:12px;"></div>
+                        <div id="ap-match-report" style="margin-top:16px;"></div>
+                    </div>
+                </div>
+
                 <div id="events-empty-state" class="empty-project-state" style="padding: 40px; text-align: center;">
                     <div style="width: 48px; height: 48px; border-radius: 12px; background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.2); display: flex; align-items: center; justify-content: center; margin: 0 auto 16px;">
                         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>

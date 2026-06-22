@@ -36,3 +36,7 @@ yarn-error.log*
 .env.development.local
 .env.test.local
 .env.production.local
+
+# Tesseract OCR language-model cache (downloaded at runtime)
+agent/advanced/narrative/.tesseract-cache/
+agent/advanced/narrative/_*.png

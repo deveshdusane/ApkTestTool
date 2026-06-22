@@ -212,6 +212,8 @@ function switchTab(tabId) {
     }
     if (tabId === 'events') {
         renderEventsTab(currentSession.runtime);
+        if (typeof loadScriptCheck === 'function') loadScriptCheck();
+        if (typeof initAutoPlay === 'function') initAutoPlay();
     }
     if (tabId === 'iap') {
         renderIAPTab();
@@ -2640,6 +2642,436 @@ function renderChoiceEvents(snap) {
 
 window.startChoiceEventsPolling = startChoiceEventsPolling;
 window.stopChoiceEventsPolling  = stopChoiceEventsPolling;
+
+// ─── NARRATIVE SCRIPT CHECK (deviceless dialog/choice QA) ───────────────────
+// Loads the persisted dialog sheet for the active project, parses + analyzes it,
+// and renders the findings. No device or session needed — pure sheet QA.
+async function loadScriptCheck() {
+    if (!window.api || !window.api.getScriptAnalysis) return;
+    let res;
+    try { res = await window.api.getScriptAnalysis(); }
+    catch (_) { return; }
+    renderScriptCheck(res);
+}
+
+function renderScriptCheck(res) {
+    const body    = document.getElementById('script-check-body');
+    const badges  = document.getElementById('sc-badges');
+    const clearBt = document.getElementById('sc-clear-btn');
+    const note    = document.getElementById('sc-toolbar-note');
+    if (!body) return;
+
+    // Wire buttons once.
+    const importBt = document.getElementById('sc-import-btn');
+    if (importBt && !importBt._bound) {
+        importBt._bound = true;
+        importBt.addEventListener('click', async () => {
+            if (!window.api || !window.api.importScriptSheet) return;
+            importBt.disabled = true;
+            const r = await window.api.importScriptSheet();
+            importBt.disabled = false;
+            if (r && r.ok) { renderScriptCheck(r); }
+            else if (r && r.error && r.error !== 'cancelled') { alert('Sheet import failed: ' + r.error); }
+        });
+    }
+    if (clearBt && !clearBt._bound) {
+        clearBt._bound = true;
+        clearBt.addEventListener('click', async () => {
+            if (window.api && window.api.clearScriptSheet) { await window.api.clearScriptSheet(); loadScriptCheck(); }
+        });
+    }
+
+    // No project / not loaded yet → honest zero-state.
+    if (!res || !res.ok) {
+        if (badges) badges.style.display = 'none';
+        if (clearBt) clearBt.style.display = 'none';
+        const msg = res && res.error ? escapeHtml(res.error) : 'Select a project to scan its dialog sheet.';
+        body.innerHTML = '<div class="ce-empty">' + msg + '</div>';
+        return;
+    }
+    if (!res.loaded) {
+        if (badges) badges.style.display = 'none';
+        if (clearBt) clearBt.style.display = 'none';
+        if (note) note.style.display = '';
+        body.innerHTML = '<div class="ce-empty" style="line-height:1.6;">' +
+            'No dialog sheet imported yet.<br>' +
+            '<span style="color:#71717a;">Export your dialogs &amp; choices Google Sheet as <b>.csv</b> and click ' +
+            '<b>Import dialog sheet</b>. The scan runs instantly — no device, no session.</span></div>';
+        return;
+    }
+
+    const parse = res.parse || {};
+    const a     = res.analysis || {};
+    const sum   = a.summary || {};
+    // "Issues" = real errors only (typos + encoding + structural). Dynamic
+    // inserts are verify-on-device items, not errors — they get their own count.
+    const totalIssues = (sum.typoCount || 0) + (sum.encodingLines || 0) + (sum.structuralIssues || 0);
+
+    // Header badges (denominator first).
+    if (badges) badges.style.display = '';
+    if (clearBt) clearBt.style.display = '';
+    if (note) note.style.display = 'none';
+    const setText = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
+    setText('sc-stat-days', parse.totalDays || 0);
+    setText('sc-stat-choices', parse.totalChoices || 0);
+    setText('sc-stat-issues', totalIssues);
+    const issuesEl = document.getElementById('sc-stat-issues');
+    if (issuesEl) issuesEl.style.color = totalIssues > 0 ? '#fbbf24' : '#4ade80';
+
+    // ── Findings sections ────────────────────────────────────────────────────
+    const section = (color, title, count, sub, rowsHtml) =>
+        '<div style="margin-bottom:18px;">' +
+            '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">' +
+                '<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:' + color + ';"></span>' +
+                '<span style="font-size:13px;font-weight:600;color:#e4e4e7;">' + escapeHtml(title) + '</span>' +
+                '<span style="font-size:12px;color:' + color + ';font-weight:600;">' + count + '</span>' +
+                '<span style="font-size:12px;color:#71717a;">' + escapeHtml(sub) + '</span>' +
+            '</div>' + rowsHtml +
+        '</div>';
+
+    const row = (cells) =>
+        '<div style="display:flex;gap:12px;padding:6px 10px;border-bottom:1px solid rgba(255,255,255,0.05);font-size:12px;align-items:baseline;">' + cells + '</div>';
+    const dayCol  = d => '<span style="min-width:74px;color:#94A3B8;font-family:\'JetBrains Mono\',monospace;">' + escapeHtml(d || '—') + '</span>';
+    const whereCol= w => '<span style="min-width:60px;color:#71717a;">' + escapeHtml(w || '') + '</span>';
+    const lineCol = (l, extra) => '<span style="flex:1;color:#e4e4e7;' + (extra || '') + '" title="' + escapeHtml(l || '') + '">' + escapeHtml(l || '') + '</span>';
+
+    let html = '';
+
+    // Typos (red — real errors)
+    const typos = a.typos || [];
+    if (typos.length) {
+        const rows = typos.slice(0, 200).map(t => row(
+            dayCol(t.day) + whereCol(t.where) +
+            '<span style="min-width:150px;"><b style="color:#f87171;">' + escapeHtml(t.word) + '</b> → <span style="color:#4ade80;">' + escapeHtml(t.suggestion) + '</span></span>' +
+            lineCol(t.line)
+        )).join('');
+        html += section('#EF4444', 'Misspellings', typos.length, 'exact dictionary match — safe to fix',
+            rows + (typos.length > 200 ? '<div style="padding:6px 10px;color:#71717a;font-size:11px;">…' + (typos.length - 200) + ' more</div>' : ''));
+    }
+
+    // Encoding artifacts (red)
+    const enc = a.encoding || [];
+    if (enc.length) {
+        const rows = enc.slice(0, 100).map(e => row(
+            dayCol(e.day) + whereCol(e.where) + lineCol(e.line, 'font-family:\'JetBrains Mono\',monospace;')
+        )).join('');
+        html += section('#EF4444', 'Encoding artifacts (mojibake)', enc.length,
+            'curly quotes/dashes mis-exported — re-export sheet as UTF-8', rows);
+    }
+
+    // Dynamic inserts (amber — must verify on device)
+    const inserts = a.inserts || [];
+    if (inserts.length) {
+        // Group by token for a compact catalog.
+        const byTok = {};
+        inserts.forEach(i => { (byTok[i.token] = byTok[i.token] || []).push(i); });
+        const rows = Object.keys(byTok).slice(0, 100).map(tok => {
+            const list = byTok[tok];
+            const sample = list[0];
+            return row(
+                '<span style="min-width:140px;"><code style="color:#fbbf24;background:rgba(250,204,21,0.1);padding:1px 6px;border-radius:4px;">' + escapeHtml(tok) + '</code></span>' +
+                '<span style="min-width:60px;color:#71717a;">×' + list.length + '</span>' +
+                lineCol(sample.line)
+            );
+        }).join('');
+        html += section('#FACC15', 'Dynamic name-inserts', Object.keys(byTok).length,
+            'placeholders substituted at runtime — verify they render filled (not literal)', rows);
+    }
+
+    // Structural (amber)
+    const struct = a.structural || [];
+    if (struct.length) {
+        const rows = struct.slice(0, 100).map(s => row(
+            dayCol(s.day) +
+            '<span style="flex:1;color:#e4e4e7;">' + escapeHtml(s.issue) + (s.detail ? ' — <span style="color:#94A3B8;">' + escapeHtml(s.detail) + '</span>' : '') + '</span>'
+        )).join('');
+        html += section('#FACC15', 'Structural issues', struct.length, 'duplicate/empty choices, empty days', rows);
+    }
+
+    // All clean → honest green state.
+    if (!html) {
+        html = '<div style="display:flex;align-items:center;gap:8px;padding:14px;background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.2);border-radius:8px;">' +
+            '<span style="color:#4ade80;font-size:16px;">✓</span>' +
+            '<span style="font-size:13px;color:#e4e4e7;">No script issues found in <b>' + (parse.totalDays || 0) + ' days</b> / <b>' +
+            (parse.totalBeats || 0) + ' dialog lines</b> / <b>' + (parse.totalChoices || 0) + ' choices</b>. ' +
+            '<span style="color:#71717a;">Spelling, encoding, placeholders and choice structure all clean.</span></span></div>';
+    } else {
+        html = '<div style="font-size:12px;color:#94A3B8;margin-bottom:14px;">' +
+            'Scanned <b style="color:#e4e4e7;">' + (parse.totalDays || 0) + '</b> days · ' +
+            '<b style="color:#e4e4e7;">' + (parse.totalBeats || 0) + '</b> dialog lines · ' +
+            '<b style="color:#e4e4e7;">' + (parse.totalChoices || 0) + '</b> choices' +
+            (parse.seasons > 1 ? ' · ' + parse.seasons + ' seasons' : '') + '.</div>' + html;
+    }
+
+    body.innerHTML = html;
+}
+
+window.loadScriptCheck = loadScriptCheck;
+
+// ─── NARRATIVE AUTO-PLAY (calibration + drive the game) ─────────────────────
+const _ap = { mode: null, next: null, choices: [], extraButtons: [], dialogRegion: null, dialogPts: [], hasFrame: false };
+
+function initAutoPlay() {
+    const wrap = document.getElementById('ap-frame-wrap');
+    if (!wrap) return;
+
+    const note = document.getElementById('ap-cal-note');
+    const setNote = (t, color) => { if (note) { note.innerHTML = t; note.style.color = color || '#94A3B8'; } };
+
+    // Load any saved calibration so the tester sees they're already set up.
+    if (!wrap._loaded && window.api && window.api.getAutoplayProfile) {
+        wrap._loaded = true;
+        window.api.getAutoplayProfile().then(r => {
+            if (r && r.ok && r.profile && r.profile.next) {
+                _ap.next = r.profile.next;
+                _ap.choices = r.profile.choices || [];
+                _ap.extraButtons = r.profile.extraButtons || [];
+                _ap.dialogRegion = r.profile.dialogRegion || null;
+                setNote('✓ Calibration loaded — Next' + (_ap.choices.length ? ' + ' + _ap.choices.length + ' choice(s)' : '') +
+                    (_ap.extraButtons.length ? ' + ' + _ap.extraButtons.length + ' continue btn(s)' : '') +
+                    (_ap.dialogRegion ? ' + dialog box' : '') +
+                    '. Capture a frame to review/adjust, or go straight to Run.', '#4ade80');
+            }
+        }).catch(() => {});
+    }
+
+    const renderMarkers = () => {
+        const m = document.getElementById('ap-markers');
+        if (!m) return;
+        const dot = (p, color, label) => p ?
+            ('<div style="position:absolute;left:' + (p.x * 100) + '%;top:' + (p.y * 100) + '%;transform:translate(-50%,-50%);' +
+             'width:16px;height:16px;border-radius:50%;background:' + color + ';border:2px solid #fff;box-shadow:0 0 6px rgba(0,0,0,0.6);">' +
+             '<span style="position:absolute;left:18px;top:-2px;font-size:10px;color:#fff;background:rgba(0,0,0,0.6);padding:1px 4px;border-radius:4px;white-space:nowrap;">' + label + '</span></div>') : '';
+        const r = _ap.dialogRegion;
+        const rect = r ?
+            ('<div style="position:absolute;left:' + (r.x * 100) + '%;top:' + (r.y * 100) + '%;width:' + (r.w * 100) + '%;height:' + (r.h * 100) + '%;' +
+             'border:2px solid #3B82F6;background:rgba(59,130,246,0.12);box-sizing:border-box;">' +
+             '<span style="position:absolute;left:2px;top:2px;font-size:10px;color:#fff;background:rgba(59,130,246,0.8);padding:1px 4px;border-radius:4px;">dialog box</span></div>') : '';
+        m.innerHTML = rect +
+            dot(_ap.next, '#22C55E', 'Next') +
+            _ap.choices.map((c, i) => dot(c, '#FACC15', 'choice ' + (i + 1))).join('') +
+            _ap.extraButtons.map((c, i) => dot(c, '#22D3EE', 'continue ' + (i + 1))).join('');
+    };
+
+    // Capture a frame for calibration.
+    const capBtn = document.getElementById('ap-capture-btn');
+    if (capBtn && !capBtn._bound) {
+        capBtn._bound = true;
+        capBtn.addEventListener('click', async () => {
+            if (!window.api || !window.api.captureCalibrationFrame) return;
+            capBtn.disabled = true; setNote('Capturing…');
+            const r = await window.api.captureCalibrationFrame();
+            capBtn.disabled = false;
+            if (!r || !r.ok) { setNote('Capture failed: ' + escapeHtml((r && r.error) || 'unknown') + ' (is a device connected?)', '#f87171'); return; }
+            const img = document.getElementById('ap-frame-img');
+            if (img) img.src = r.png;
+            wrap.style.display = 'inline-block';
+            _ap.hasFrame = true;
+            renderMarkers();
+            setNote('Frame captured. Click <b>Set Next button</b>, then click the Next button on the image.');
+        });
+    }
+
+    // Mode toggles.
+    const bindMode = (id, mode, msg) => {
+        const b = document.getElementById(id);
+        if (b && !b._bound) {
+            b._bound = true;
+            b.addEventListener('click', () => { _ap.mode = mode; setNote(msg); });
+        }
+    };
+    bindMode('ap-mode-next', 'next', 'Click the <b>Next</b> button on the screenshot.');
+    bindMode('ap-mode-choice', 'choice', 'Click a <b>choice button</b> position on the screenshot (add as many as the game shows).');
+    bindMode('ap-mode-continue', 'continue', 'Click a <b>continue / day-end button</b> ("Start Next Day", "Completed → NEXT") — capture that screen first, then click it.');
+    const dialogBtn = document.getElementById('ap-mode-dialog');
+    if (dialogBtn && !dialogBtn._bound) {
+        dialogBtn._bound = true;
+        dialogBtn.addEventListener('click', () => { _ap.mode = 'dialog'; _ap.dialogPts = []; setNote('Click the <b>top-left</b> then <b>bottom-right</b> corner of the dialog text area (skip the stats bar &amp; Next button).'); });
+    }
+    const clearBtn = document.getElementById('ap-mode-clear');
+    if (clearBtn && !clearBtn._bound) {
+        clearBtn._bound = true;
+        clearBtn.addEventListener('click', () => { _ap.next = null; _ap.choices = []; _ap.extraButtons = []; _ap.dialogRegion = null; _ap.dialogPts = []; _ap.mode = null; renderMarkers(); setNote('Markers cleared.'); });
+    }
+
+    // Click on the frame → set a marker (fraction of the rendered image).
+    if (!wrap._clickBound) {
+        wrap._clickBound = true;
+        wrap.addEventListener('click', (e) => {
+            if (!_ap.hasFrame || !_ap.mode) { if (!_ap.mode) setNote('Pick <b>Set Next button</b> or <b>Add choice slot</b> first.', '#fbbf24'); return; }
+            const rect = wrap.getBoundingClientRect();
+            const fx = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+            const fy = Math.min(1, Math.max(0, (e.clientY - rect.top) / rect.height));
+            if (_ap.mode === 'next') { _ap.next = { x: +fx.toFixed(4), y: +fy.toFixed(4) }; setNote('Next button set. Add choice slots, set dialog box, or Save calibration.', '#4ade80'); }
+            else if (_ap.mode === 'choice') { _ap.choices.push({ x: +fx.toFixed(4), y: +fy.toFixed(4) }); setNote(_ap.choices.length + ' choice slot(s) set.', '#4ade80'); }
+            else if (_ap.mode === 'continue') { _ap.extraButtons.push({ x: +fx.toFixed(4), y: +fy.toFixed(4) }); setNote(_ap.extraButtons.length + ' continue button(s) set.', '#4ade80'); }
+            else if (_ap.mode === 'dialog') {
+                _ap.dialogPts.push({ x: fx, y: fy });
+                if (_ap.dialogPts.length === 1) { setNote('Top-left set. Now click the <b>bottom-right</b> corner of the dialog area.'); }
+                else {
+                    const [a, b] = _ap.dialogPts;
+                    _ap.dialogRegion = {
+                        x: +Math.min(a.x, b.x).toFixed(4), y: +Math.min(a.y, b.y).toFixed(4),
+                        w: +Math.abs(b.x - a.x).toFixed(4), h: +Math.abs(b.y - a.y).toFixed(4)
+                    };
+                    _ap.dialogPts = [];
+                    setNote('✓ Dialog box set. Save calibration.', '#4ade80');
+                }
+            }
+            renderMarkers();
+        });
+    }
+
+    // Save calibration.
+    const saveBtn = document.getElementById('ap-save-btn');
+    if (saveBtn && !saveBtn._bound) {
+        saveBtn._bound = true;
+        saveBtn.addEventListener('click', async () => {
+            if (!_ap.next) { setNote('Set the <b>Next</b> button before saving.', '#fbbf24'); return; }
+            // Use the calibrated dialog box if set; otherwise a default that skips
+            // the top HUD/stats bar (start at 60% down).
+            const profile = { next: _ap.next, choices: _ap.choices, extraButtons: _ap.extraButtons, dialogRegion: _ap.dialogRegion || { x: 0, y: 0.6, w: 1, h: 0.32 } };
+            const r = await window.api.saveAutoplayProfile(profile);
+            if (r && r.ok) setNote('✓ Calibration saved for this project.', '#4ade80');
+            else setNote('Save failed: ' + escapeHtml((r && r.error) || 'unknown'), '#f87171');
+        });
+    }
+
+    // Run / stop.
+    const runBtn = document.getElementById('ap-run-btn');
+    const stopBtn = document.getElementById('ap-stop-btn');
+    const log = document.getElementById('ap-run-log');
+    const runNote = document.getElementById('ap-run-note');
+    const badges = document.getElementById('ap-badges');
+    let frameCount = 0, advCount = 0;
+
+    if (window.api && window.api.onAutoplayStep && !window._apStepBound) {
+        window._apStepBound = true;
+        window.api.onAutoplayStep((rec) => {
+            if (!log) return;
+            frameCount++; if (rec.advanced) advCount++;
+            const fEl = document.getElementById('ap-stat-frames'); if (fEl) fEl.textContent = frameCount;
+            const aEl = document.getElementById('ap-stat-adv'); if (aEl) aEl.textContent = advCount;
+            const tag = rec.stuck ? '<span style="color:#f87171;">stuck</span>'
+                : rec.tookChoice ? '<span style="color:#fbbf24;">choice</span>'
+                : rec.tookContinue ? '<span style="color:#22d3ee;">continue</span>'
+                : rec.advanced ? '<span style="color:#4ade80;">advanced</span>'
+                : '<span style="color:#71717a;">—</span>';
+            const noDialog = rec.noDialog || !(rec.lines && rec.lines.length);
+            const line = noDialog ? '— no dialog on this frame (minigame / cutscene / transition)'
+                : rec.lines[0].text;
+            const conf = (!noDialog && rec.meanConfidence != null) ? rec.meanConfidence + '%' : '';
+            const rowEl = document.createElement('div');
+            rowEl.style.cssText = 'display:flex;gap:10px;padding:5px 8px;border-bottom:1px solid rgba(255,255,255,0.05);align-items:baseline;';
+            rowEl.innerHTML = '<span style="min-width:30px;color:#71717a;">#' + rec.step + '</span>' +
+                '<span style="min-width:64px;">' + tag + '</span>' +
+                '<span style="min-width:40px;color:#71717a;font-family:\'JetBrains Mono\',monospace;">' + conf + '</span>' +
+                '<span style="flex:1;color:' + (noDialog ? '#71717a' : '#e4e4e7') + ';' + (noDialog ? 'font-style:italic;' : '') + '" title="' + escapeHtml(line) + '">' + escapeHtml(line) + '</span>';
+            log.appendChild(rowEl);
+            log.scrollTop = log.scrollHeight;
+        });
+    }
+
+    if (runBtn && !runBtn._bound) {
+        runBtn._bound = true;
+        runBtn.addEventListener('click', async () => {
+            if (!_ap.next) { if (runNote) { runNote.textContent = 'Calibrate the Next button first.'; runNote.style.color = '#fbbf24'; } return; }
+            const steps = Math.max(1, Math.min(200, parseInt(document.getElementById('ap-steps').value, 10) || 30));
+            frameCount = 0; advCount = 0;
+            if (log) log.innerHTML = '';
+            const rep = document.getElementById('ap-match-report'); if (rep) rep.innerHTML = '';
+            if (badges) badges.style.display = '';
+            runBtn.style.display = 'none';
+            if (stopBtn) stopBtn.style.display = '';
+            if (runNote) { runNote.textContent = 'Running… (OCR-ing each frame, ~1s/step)'; runNote.style.color = '#94A3B8'; }
+            const r = await window.api.startAutoplay({ steps });
+            runBtn.style.display = ''; if (stopBtn) stopBtn.style.display = 'none';
+            if (r && r.ok) {
+                if (runNote) { runNote.innerHTML = '✓ Done — ' + r.steps + ' frames, ' + r.advanced + ' advanced' + (r.stuckAt ? ', stopped at frame ' + r.stuckAt + ' (end/blocked)' : '') + '.'; runNote.style.color = '#4ade80'; }
+                renderMatchReport(r.match);
+            } else {
+                if (runNote) { runNote.textContent = 'Run failed: ' + ((r && r.error) || 'unknown'); runNote.style.color = '#f87171'; }
+            }
+        });
+    }
+    if (stopBtn && !stopBtn._bound) {
+        stopBtn._bound = true;
+        stopBtn.addEventListener('click', async () => { if (window.api.stopAutoplay) await window.api.stopAutoplay(); if (runNote) { runNote.textContent = 'Stopping…'; } });
+    }
+}
+// Render the OCR-vs-sheet match report produced after an auto-play run.
+function renderMatchReport(match) {
+    const el = document.getElementById('ap-match-report');
+    if (!el) return;
+    if (!match || !match.ok) {
+        el.innerHTML = '<div style="font-size:12px;color:#71717a;padding:8px 0;">' +
+            'Import a dialog sheet (Script Check above) to get the OCR-vs-sheet match report.</div>';
+        return;
+    }
+    const rep = match.report || {};
+    const ph = rep.literalPlaceholders || [];
+    const matchedPct = rep.framesWithDialog ? Math.round((rep.matchedFrames / rep.framesWithDialog) * 100) : 0;
+
+    const stat = (val, label, color) =>
+        '<div style="flex:1;min-width:120px;background:#0F172A;border:1px solid #334155;border-radius:8px;padding:10px 12px;">' +
+            '<div style="font-size:20px;font-weight:700;color:' + color + ';font-family:\'JetBrains Mono\',monospace;">' + val + '</div>' +
+            '<div style="font-size:11px;color:#94A3B8;margin-top:2px;">' + escapeHtml(label) + '</div>' +
+        '</div>';
+
+    let html = '<div style="font-size:13px;font-weight:600;color:#e4e4e7;margin-bottom:4px;">📋 Sheet Match Report</div>' +
+        '<div style="font-size:12px;color:#94A3B8;margin-bottom:10px;">' +
+            'Matched <b style="color:#e4e4e7;">' + rep.matchedFrames + '</b> of <b style="color:#e4e4e7;">' + rep.framesWithDialog + '</b> dialog frames to your sheet' +
+            (rep.daysSeen && rep.daysSeen.length ? ' · days seen: <b style="color:#e4e4e7;">' + rep.daysSeen.map(escapeHtml).join(', ') + '</b>' : '') + '.</div>';
+
+    html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">' +
+        stat(matchedPct + '%', 'frames matched', matchedPct >= 70 ? '#4ade80' : '#fbbf24') +
+        stat(ph.length, 'placeholders on screen', ph.length ? '#f87171' : '#4ade80') +
+        stat(rep.unmatchedLines || 0, 'lines not in sheet', (rep.unmatchedLines > 0) ? '#fbbf24' : '#4ade80') +
+        stat(rep.uniqueAuthoredMatched || 0, 'authored lines seen', '#3B82F6') +
+    '</div>';
+
+    // The headline bug: placeholders shown literally (not substituted) in-game.
+    if (ph.length) {
+        html += '<div style="margin-bottom:12px;">' +
+            '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">' +
+                '<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#EF4444;"></span>' +
+                '<span style="font-size:13px;font-weight:600;color:#e4e4e7;">Unfilled placeholders on screen</span>' +
+                '<span style="font-size:12px;color:#f87171;font-weight:600;">' + ph.length + '</span>' +
+                '<span style="font-size:12px;color:#71717a;">— shown literally instead of the real value (bug)</span>' +
+            '</div>' +
+            ph.slice(0, 50).map(p =>
+                '<div style="display:flex;gap:10px;padding:5px 8px;border-bottom:1px solid rgba(255,255,255,0.05);font-size:12px;">' +
+                    '<span style="min-width:34px;color:#71717a;">#' + p.step + '</span>' +
+                    '<span style="min-width:74px;color:#94A3B8;font-family:\'JetBrains Mono\',monospace;">' + escapeHtml(p.match ? p.match.day : '—') + '</span>' +
+                    '<span style="flex:1;color:#e4e4e7;" title="' + escapeHtml(p.line) + '">' + escapeHtml(p.line) + '</span>' +
+                '</div>'
+            ).join('') +
+        '</div>';
+    }
+
+    // Per-frame verdict table.
+    const rows = (match.results || []).filter(r => !r.noDialog).map(r => {
+        const best = (r.lines || []).map(l => l.match).filter(Boolean).sort((a, b) => b.score - a.score)[0];
+        const verdict = r.matched
+            ? '<span style="color:#4ade80;">✓ ' + escapeHtml(best.day) + ' ' + escapeHtml(best.where) + ' (' + Math.round(best.score * 100) + '%)</span>'
+            : '<span style="color:#fbbf24;">no sheet match</span>';
+        const line = (r.lines && r.lines[0] ? r.lines[0].line : '') || '';
+        return '<div style="display:flex;gap:10px;padding:5px 8px;border-bottom:1px solid rgba(255,255,255,0.05);font-size:12px;align-items:baseline;">' +
+            '<span style="min-width:34px;color:#71717a;">#' + r.step + '</span>' +
+            '<span style="min-width:200px;">' + verdict + '</span>' +
+            '<span style="flex:1;color:#e4e4e7;" title="' + escapeHtml(line) + '">' + escapeHtml(line) + '</span>' +
+        '</div>';
+    }).join('');
+    if (rows) {
+        html += '<div style="font-size:12px;font-weight:600;color:#e4e4e7;margin:8px 0 4px;">Per-frame match</div>' +
+            '<div style="max-height:260px;overflow:auto;">' + rows + '</div>';
+    }
+
+    el.innerHTML = html;
+}
+window.renderMatchReport = renderMatchReport;
+
+window.initAutoPlay = initAutoPlay;
 
 // ─── PROGRESSION (chapter/level starts & completes) ─────────────────────────
 let _progPollTimer = null;

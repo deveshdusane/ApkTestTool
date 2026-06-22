@@ -41,6 +41,17 @@ contextBridge.exposeInMainWorld('api', {
     // Analytics tracking plan (expected events)
     importTrackingPlan:   ()          => ipcRenderer.invoke('import-tracking-plan'),
     clearTrackingPlan:    ()          => ipcRenderer.invoke('clear-tracking-plan'),
+    // Narrative script sheet (deviceless dialog/choice QA)
+    importScriptSheet:    ()          => ipcRenderer.invoke('import-script-sheet'),
+    getScriptAnalysis:    ()          => ipcRenderer.invoke('get-script-analysis'),
+    clearScriptSheet:     ()          => ipcRenderer.invoke('clear-script-sheet'),
+    // Narrative auto-player (calibration + drive the game)
+    captureCalibrationFrame: ()       => ipcRenderer.invoke('capture-calibration-frame'),
+    getAutoplayProfile:   ()          => ipcRenderer.invoke('get-autoplay-profile'),
+    saveAutoplayProfile:  (profile)   => ipcRenderer.invoke('save-autoplay-profile', profile),
+    startAutoplay:        (opts)      => ipcRenderer.invoke('start-autoplay', opts),
+    stopAutoplay:         ()          => ipcRenderer.invoke('stop-autoplay'),
+    onAutoplayStep:       (callback)  => ipcRenderer.on('autoplay-step', (_event, rec) => callback(rec)),
 
     // Save-state monitor live snapshot
     getSaveState:     ()              => ipcRenderer.invoke('get-save-state'),

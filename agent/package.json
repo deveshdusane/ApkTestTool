@@ -1,6 +1,8 @@
 {
   "dependencies": {
     "app-info-parser": "^1.1.6",
+    "jimp": "^0.22.12",
+    "tesseract.js": "^5.1.1",
     "unzipper": "^0.12.3"
   }
 }

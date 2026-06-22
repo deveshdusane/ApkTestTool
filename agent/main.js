@@ -28,6 +28,9 @@ const scrcpyManager = require('./cast/scrcpyManager');
 const { fbEventTracker } = require('./advanced/eventAnalyzers/fbEventTracker');
 const { choiceEventTracker } = require('./advanced/eventAnalyzers/choiceEventTracker');
 const { progressionTracker } = require('./advanced/eventAnalyzers/progressionTracker');
+const scriptSheet = require('./advanced/narrative/scriptSheet');
+const autoPlayer = require('./advanced/narrative/autoPlayer');
+const scriptMatcher = require('./advanced/narrative/scriptMatcher');
 const saveStateMonitor = require('./advanced/saveStateMonitor');
 const textOverflowDetector = require('./advanced/textOverflowDetector');
 const platformDispatch = require('./platformDispatch');
@@ -219,6 +222,113 @@ class QAAgent {
             return { ok: true };
         } catch (e) { return { ok: false, error: e.message }; }
     }
+
+    // ── Narrative script sheet (deviceless dialog/choice QA) ──────────────────
+    scriptSheetPath() {
+        return path.join(projectManager.getProjectPath(this.currentProject), 'narrative-script.csv');
+    }
+
+    // Parse + analyze a dialog sheet, persist the raw CSV per project, return
+    // both the parse summary and the findings. Deviceless — no session needed.
+    importScriptSheet(filePath) {
+        try {
+            if (!this.currentProject) return { ok: false, error: 'No project selected.' };
+            if (!filePath || !fs.existsSync(filePath)) return { ok: false, error: 'File not found.' };
+            const text = fs.readFileSync(filePath, 'utf8');
+            const parsed = scriptSheet.parseScriptCsv(text);
+            if (parsed.error) return { ok: false, error: parsed.error };
+            const analysis = scriptSheet.analyzeScript(parsed);
+            fs.writeFileSync(this.scriptSheetPath(), text);
+            logger.logInfo(`Imported narrative script: ${parsed.summary.totalDays} days, ${parsed.summary.totalChoices} choices`);
+            return { ok: true, loaded: true, parse: parsed.summary, analysis };
+        } catch (e) { return { ok: false, error: e.message }; }
+    }
+
+    // Re-run parse+analyze from the persisted CSV (on project load / tab open).
+    getScriptAnalysis() {
+        try {
+            if (!this.currentProject) return { ok: false, error: 'No project selected.' };
+            const p = this.scriptSheetPath();
+            if (!fs.existsSync(p)) return { ok: true, loaded: false };
+            const parsed = scriptSheet.parseScriptCsv(fs.readFileSync(p, 'utf8'));
+            if (parsed.error) return { ok: false, error: parsed.error };
+            return { ok: true, loaded: true, parse: parsed.summary, analysis: scriptSheet.analyzeScript(parsed) };
+        } catch (e) { return { ok: false, error: e.message }; }
+    }
+
+    clearScriptSheet() {
+        try {
+            if (this.currentProject && fs.existsSync(this.scriptSheetPath())) fs.unlinkSync(this.scriptSheetPath());
+            return { ok: true };
+        } catch (e) { return { ok: false, error: e.message }; }
+    }
+
+    // ── Narrative auto-player (calibration + drive the game) ──────────────────
+    autoplayProfilePath() {
+        return path.join(projectManager.getProjectPath(this.currentProject), 'narrative-autoplay-profile.json');
+    }
+
+    getAutoplayProfile() {
+        try {
+            if (!this.currentProject) return { ok: false, error: 'No project selected.' };
+            const p = this.autoplayProfilePath();
+            if (!fs.existsSync(p)) return { ok: true, profile: null };
+            return { ok: true, profile: JSON.parse(fs.readFileSync(p, 'utf8')) };
+        } catch (e) { return { ok: false, error: e.message }; }
+    }
+
+    saveAutoplayProfile(profile) {
+        try {
+            if (!this.currentProject) return { ok: false, error: 'No project selected.' };
+            if (!profile || !profile.next || typeof profile.next.x !== 'number')
+                return { ok: false, error: 'Profile must include a Next button position.' };
+            fs.writeFileSync(this.autoplayProfilePath(), JSON.stringify(profile, null, 2));
+            return { ok: true };
+        } catch (e) { return { ok: false, error: e.message }; }
+    }
+
+    // Capture one frame for the calibration UI: base64 PNG + screen size, so the
+    // renderer can show it and let the tester click the Next/choice positions.
+    async captureCalibrationFrame() {
+        try {
+            const size = await autoPlayer.getScreenSize(true);
+            const buf = await autoPlayer.screencap();
+            if (!buf || buf.length === 0) return { ok: false, error: 'Empty screenshot — is a device connected?' };
+            return { ok: true, png: 'data:image/png;base64,' + buf.toString('base64'), w: size.w, h: size.h };
+        } catch (e) { return { ok: false, error: e.message }; }
+    }
+
+    // Drive the game from the saved profile. onStep streams each frame record.
+    async runNarrativeAutoPlay(opts = {}, onStep = null) {
+        try {
+            if (!this.currentProject) return { ok: false, error: 'No project selected.' };
+            const pr = this.getAutoplayProfile();
+            if (!pr.ok) return pr;
+            if (!pr.profile) return { ok: false, error: 'Not calibrated yet — set the Next button first.' };
+            this._autoplayStop = false;
+            const res = await autoPlayer.runAutoPlay(pr.profile, {
+                steps: opts.steps || 30,
+                settleMs: opts.settleMs || 800,
+                ocr: opts.ocr !== false,
+                onStep: rec => { try { if (onStep) onStep(rec); } catch (_) {} },
+                shouldStop: () => this._autoplayStop
+            });
+            // Increment 4: if a dialog sheet is imported, match the captured frames
+            // against it → per-frame verdicts + a run report (placeholders, coverage).
+            if (res.ok && res.frames && fs.existsSync(this.scriptSheetPath())) {
+                try {
+                    const parsed = scriptSheet.parseScriptCsv(fs.readFileSync(this.scriptSheetPath(), 'utf8'));
+                    if (!parsed.error) {
+                        const m = scriptMatcher.matchRun(res.frames, parsed);
+                        if (m.ok) res.match = m;
+                    }
+                } catch (_) { /* matching is best-effort — never fail the run on it */ }
+            }
+            return res;
+        } catch (e) { return { ok: false, error: e.message }; }
+    }
+
+    stopNarrativeAutoPlay() { this._autoplayStop = true; return { ok: true }; }
 
     async startSession(apkPath, onLiveData = null) {
         try {

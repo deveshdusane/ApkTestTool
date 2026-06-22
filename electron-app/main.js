@@ -209,6 +209,31 @@ ipcMain.handle('clear-choice-manifest', async () => {
     return agent.clearChoiceManifest();
 });
 
+// Narrative script sheet — import dialog/choice CSV for deviceless QA scan.
+ipcMain.handle('import-script-sheet', async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+        properties: ['openFile'],
+        title: 'Import dialog sheet (all dialogs & choices)',
+        filters: [{ name: 'Dialog sheet (CSV)', extensions: ['csv'] }]
+    });
+    if (canceled || !filePaths || !filePaths[0]) return { ok: false, error: 'cancelled' };
+    return agent.importScriptSheet(filePaths[0]);
+});
+
+ipcMain.handle('get-script-analysis', async () => agent.getScriptAnalysis());
+ipcMain.handle('clear-script-sheet', async () => agent.clearScriptSheet());
+
+// Narrative auto-player — calibration + drive the game.
+ipcMain.handle('capture-calibration-frame', async () => agent.captureCalibrationFrame());
+ipcMain.handle('get-autoplay-profile', async () => agent.getAutoplayProfile());
+ipcMain.handle('save-autoplay-profile', async (event, profile) => agent.saveAutoplayProfile(profile));
+ipcMain.handle('start-autoplay', async (event, opts) => {
+    return agent.runNarrativeAutoPlay(opts || {}, (rec) => {
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('autoplay-step', rec);
+    });
+});
+ipcMain.handle('stop-autoplay', async () => agent.stopNarrativeAutoPlay());
+
 // Analytics tracking plan — import expected event names (CSV/JSON/TXT).
 ipcMain.handle('import-tracking-plan', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
